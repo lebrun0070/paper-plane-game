@@ -308,10 +308,10 @@ const ECON = {
   runOverheadSec: 8,          // launch prep + shop time per run (sim accounting)
   descentSec: 3,              // avg descent/CALL IT time per run (sim accounting)
   tracks: {
-    engine:{name:"Engine",       base:40,   growth:1.72, max:40, who:"mateoGary"},
-    aero:  {name:"Aerodynamics", base:60,   growth:1.73, max:40, who:"mateoGary"},
+    engine:{name:"Engine",       base:32,   growth:1.72, max:40, who:"mateoGary"},
+    aero:  {name:"Aerodynamics", base:45,   growth:1.73, max:40, who:"mateoGary"},
     fuel:  {name:"Fuel Tank",    base:50,   growth:1.74, max:40, who:"mikey"},
-    boost: {name:"Rocket Boost", base:1200, growth:1.72, max:40, who:"mikey"},
+    boost: {name:"Rocket Boost", base:1200, growth:1.74, max:40, who:"mikey"},
     lift:  {name:"Lift",         base:45,   growth:1.72, max:40, who:"sophie"},
     hull:  {name:"Hull",         base:110,  growth:1.76, max:40, who:"nico"},
   },
@@ -330,20 +330,24 @@ const ECON = {
   ],
   plutoAlt: 30000000,
   planet9Alt: 75000000,
-  // Vertical tech ceiling by laps completed (lap-gated sky tiers).
-  gateCaps: [100000, 400000, 2000000, Infinity],
+  // Vertical tech ceiling by laps completed (lap-gated sky tiers):
+  // lap 1 -> stratosphere tech, lap 2 -> orbital tech, lap 3 -> deep space.
+  gateCaps: [100000, 200000, 1400000, Infinity],
   atmosphereTopFt: 120000,    // above this, climbing needs Rocket Boost
-  starMult: 0.25,             // income multiplier per Legacy Star
+  starMult: 0.7,             // income multiplier per Legacy Star
   lapIncomeMult: 0.30,        // permanent income bonus per completed lap
   stormBonus: 1.25,           // storm season (lap 4+): highest risk, highest reward
   lapCashBase: 400,           // one-time cash on completing a lap
   lapCashGrowth: 3.0,
-  wallReqBase: 2,             // headwind wall tier requirements
-  wallReqPerBorder: 2.0,
-  coinDistRate: 1.0,
-  coinAltPow: 0.62,
-  coinAltRate: 0.35,
-  starLifetimeDiv: 60000,     // legacy stars = floor((lifetime/div)^0.5)
+  wallReqBase: 3,             // headwind wall tier requirements
+  wallReqPerBorder: 8.5,
+  wallReqPow: 0.46,           // concave: each lap's walls harden, but gently
+  wallReqLap1Bonus: 3,        // the back half of lap 1 pushes back a little harder
+  coinDistRate: 2.0,
+  coinFlat: 22,
+  coinAltPow: 1.0,            // altitude income is linear: climbing IS the money
+  coinAltRate: 0.02,
+  starLifetimeDiv: 630000,       // legacy stars = floor((lifetime/div)^pow)
   starLifetimePow: 0.5,
 };
 function upCost(track, lvl){
@@ -353,10 +357,10 @@ function upCost(track, lvl){
 function statsFor(up, stars, laps){
   const E=up.engine, A=up.aero, F=up.fuel, B=up.boost, L=up.lift, H=up.hull;
   return {
-    speed: 55*(1+0.20*E)*(1+0.05*A),                       // mph cruise
+    speed: 55*Math.pow(1.08,E)*(1+0.04*A),                 // mph cruise
     fuelTime: 22+6*F,                                      // seconds of powered flight
-    climb: (14+7*L)*(1+0.04*A),                            // ft/s in atmosphere
-    spaceClimb: B>0 ? 900*B*(1+0.10*L) : 0,                // ft/s above atmosphere
+    climb: 14*Math.pow(1.16,L)*(1+0.03*A),                 // wing climb ft/s (atmosphere)
+    spaceClimb: B>0 ? 900*Math.pow(1.22,B)*(1+0.06*L):0,   // rocket ft/s, works everywhere
     hullCap: 5200*Math.pow(1.75,H),                        // survivable ceiling ft
     mult: (1+stars*ECON.starMult)*(1+laps*ECON.lapIncomeMult)*(laps>=3?ECON.stormBonus:1),
   };
@@ -366,12 +370,15 @@ function lapCash(newLapNumber, mult){ // one-time celebration payout for lap N (
 }
 function gateCapFor(laps){ const g=ECON.gateCaps; return g[Math.min(g.length-1, laps)]; }
 // Border index k (cumulative across laps) needs engine+aero >= wallReq(k) to pass.
-function wallReq(borderIdx){ return Math.round(ECON.wallReqBase + borderIdx*ECON.wallReqPerBorder); }
+function wallReq(borderIdx){
+  const bump=(borderIdx>=4&&borderIdx<=8)?ECON.wallReqLap1Bonus:0;
+  return Math.round(ECON.wallReqBase + bump + ECON.wallReqPerBorder*Math.pow(Math.max(0,borderIdx-1),ECON.wallReqPow));
+}
 function borderIdxAt(posMi){ return Math.floor(posMi/ECON.biomeLenMi); } // next border = this+1
 function canPassWall(up, borderIdx){ return up.engine+up.aero >= wallReq(borderIdx); }
 function coinsFor(distMi, peakAlt, mult){
   return Math.max(5, Math.floor((distMi*ECON.coinDistRate
-    + Math.pow(Math.max(0,peakAlt), ECON.coinAltPow)*ECON.coinAltRate + 8) * mult));
+    + Math.pow(Math.max(0,peakAlt), ECON.coinAltPow)*ECON.coinAltRate + ECON.coinFlat) * mult));
 }
 function starsForLifetime(lifetime){
   return Math.floor(Math.pow(Math.max(0,lifetime)/ECON.starLifetimeDiv, ECON.starLifetimePow));
@@ -836,7 +843,7 @@ const PROPS={
 function propsFor(b){return PROPS[b.key]||[tree,rock]}
 
 /* ---------------- Terrain chunks ---------------- */
-const CHUNK=600, CHUNK_W=2400, AHEAD=14, BEHIND=2;
+const CHUNK=600, CHUNK_W=2400, AHEAD=7, BEHIND=2; // fog swallows anything farther
 const chunks=new Map(); // idx -> {group, nearMiss, spin, windows, arches}
 let originOffset=0;     // floating-origin shift (visual units)
 function hash(n){const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s)}
@@ -929,8 +936,10 @@ function updateChunks(){
   for(let i=cur-BEHIND;i<=cur+AHEAD;i++){
     if(!chunks.has(i))chunks.set(i,makeChunk(i));
   }
+  const groundVisible=visY(p.alt)<5200; // from space the ground is specks — skip it
   for(const [i,c] of chunks){
     if(i<cur-BEHIND||i>cur+AHEAD){disposeChunk(c);chunks.delete(i)}
+    else c.group.visible=groundVisible;
   }
 }
 
@@ -1192,7 +1201,7 @@ function updateCoins(dt){
         const dx=c.userData.gx-gx, dz=c.userData.z-p.lat, da=visY(c.userData.alt)-visY(p.alt);
         if(Math.abs(dx)<26&&Math.abs(dz)<22&&Math.abs(da)<20){
           c.userData.taken=true;c.visible=false;
-          const v=Math.floor((10+Math.sqrt(c.userData.alt)*.5)*stats().mult);
+          const v=Math.floor((5+Math.sqrt(c.userData.alt)*.2)*stats().mult);
           p.pickupCoins+=v;sfx.coin(1);
           msg(`💰 Coin ring +$${v}`);
         }
@@ -1347,9 +1356,6 @@ function updateSpace(dt){
   if(kaspvr.visible){
     kaspvr.position.set(px+50,visY(kaspvr.userData.altFt),28);
     kaspvr.rotation.y+=dt*.15;
-    if(flight.on&&kd<9000&&Math.abs(p.lat-28)<70){
-      earnStamp("hidden_kaspvr",null); // silent. no popup. you saw it. it saw you.
-    }
   }
   // bodies — each stays in its own layer's window so the zones feel distinct
   for(const b of SPACE_BODIES){
@@ -1743,7 +1749,7 @@ function physTick(dt){
       for(const nm of c.nearMiss){
         if(!nm.hit&&Math.abs(gx-nm.gx)<10&&Math.abs(p.lat-nm.z)<nm.r+4&&p.alt/6<nm.h+10){
           nm.hit=true;
-          const v=Math.floor(18*stats().mult);
+          const v=Math.floor(10*stats().mult);
           p.stuntCoins+=v;sfx.coin(3);
           msg(`😬 NEAR MISS +$${v}`);
           if(nm.kind==="whale"&&earnStamp("hidden_whale",null))msg("🐋 It waved back. Probably.");
@@ -1754,7 +1760,7 @@ function physTick(dt){
           const vy0=visY(p.alt);
           if(vy0>ar.y+3&&vy0<ar.y+30*ar.scale){
             ar.hit=true;
-            const v=Math.floor(60*stats().mult);
+            const v=Math.floor(40*stats().mult);
             p.stuntCoins+=v;sfx.star();
             msg(`🪨 THREADED THE ARCH +$${v}`);
             earnStamp("hidden_arch",null); // silent — the passport will show it
@@ -1769,6 +1775,9 @@ function physTick(dt){
   if(p.alt>30000)earnStamp("high_alt","🌐<br>HIGH ALTITUDE<br>the horizon curves");
   if(p.alt>100000&&earnStamp("stratosphere","🟣<br>STRATOSPHERE"))towerMessage("Jorge's Control Tower: sky's gone purple on the cameras. Incredible.",2200);
   if(p.alt>400000&&earnStamp("orbit","🛰️<br>LOW ORBIT"))towerMessage("Mission Control: orbit confirmed. The tower is going nuts down here.",2400,"🗼 MISSION CONTROL");
+  // KASPVR flyby — checked per physics tick so even a screaming ascent can't skip it.
+  // silent. no popup. you saw it. it saw you.
+  if(Math.abs(p.alt-450000)<Math.max(9000,Math.abs(p.vy)*dt*2)&&Math.abs(p.lat-28)<70)earnStamp("hidden_kaspvr",null);
   if(p.alt>1500000)earnStamp("moon","🌕<br>MOON FLYBY");
   if(p.alt>4000000)earnStamp("inner_planets","🔴<br>INNER PLANETS");
   if(p.alt>8000000)earnStamp("asteroid_belt","🪨<br>ASTEROID BELT");
@@ -2002,7 +2011,8 @@ ui.prestigeYes.onclick=()=>{
   ui.confirmPrestige.classList.remove("show");
   const gain=prestigeGain();
   state.stars+=gain;state.prestiges++;
-  state.money=0;state.posMi=0;
+  state.money=0;
+  state.posMi=state.laps*ECON.circumferenceMi; // back to the home meadow of this lap
   state.up={engine:0,aero:0,fuel:0,boost:0,lift:0,hull:0};
   sfx.star();
   popStamp(`🏆<br>RETIRED<br>+${gain} Legacy Star${gain>1?"s":""}`);
