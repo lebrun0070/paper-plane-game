@@ -346,9 +346,8 @@ function optimalRun(up, stars, laps, startPosMi){
   const dt=0.5;
   while(fuel>0){
     fuel-=dt; t+=dt;
-    // vertical: climb in atmosphere, boost-climb above it, respect ceilings
-    const inAtmo = alt < ECON.atmosphereTopFt;
-    const rate = inAtmo ? st.climb : st.spaceClimb;
+    // vertical: wings climb inside the atmosphere; rocket boost works everywhere
+    const rate = (alt<ECON.atmosphereTopFt ? st.climb : 0) + st.spaceClimb;
     alt = Math.min(gate, alt + rate*dt);
     peak = Math.max(peak, alt);
     // horizontal: cruise unless the next headwind wall says no
@@ -473,6 +472,7 @@ addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updat
 
 const sun=new THREE.DirectionalLight(0xfff2d8,2.1);sun.position.set(300,500,200);scene.add(sun);
 const hemi=new THREE.HemisphereLight(0xbfe3ff,0x9a8b62,.85);scene.add(hemi);
+const ambient=new THREE.AmbientLight(0x9aa4b8,.5);scene.add(ambient); // keeps undersides readable in space
 scene.fog=new THREE.FogExp2(0xcfe8f8,.0012);
 
 /* Sky gradient by altitude (lerped colors, matches fog) */
@@ -813,8 +813,10 @@ function makeSign(text,bg,fg,w,h){
   const g=cnv.getContext("2d");
   g.fillStyle=bg;g.fillRect(0,0,cnv.width,cnv.height);
   g.strokeStyle=fg;g.lineWidth=4;g.strokeRect(3,3,cnv.width-6,cnv.height-6);
-  g.fillStyle=fg;g.font=`bold ${Math.floor(cnv.height*.48)}px 'Permanent Marker',cursive`;
-  g.textAlign="center";g.textBaseline="middle";
+  let fs=Math.floor(cnv.height*.48);
+  g.font=`bold ${fs}px 'Permanent Marker',cursive`;
+  while(g.measureText(text).width>cnv.width*.88&&fs>8){fs-=2;g.font=`bold ${fs}px 'Permanent Marker',cursive`}
+  g.fillStyle=fg;g.textAlign="center";g.textBaseline="middle";
   g.fillText(text,cnv.width/2,cnv.height/2+2);
   const tex=new THREE.CanvasTexture(cnv);
   return new THREE.MeshBasicMaterial({map:tex});
@@ -1072,34 +1074,350 @@ function updateCoins(dt){
   }
 }
 
-/* ---------------- Craft model (Phase 1: paper plane; all 8 in Phase 3) ---------------- */
+/* ---------------- The vertical world: stars, Earth, KASPVR, planets ---------------- */
+// Stars — fade in near orbit
+const starPts=(()=>{
+  const n=1400,a=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    const th=Math.random()*6.28,ph=Math.acos(2*Math.random()-1),r=30000+Math.random()*20000;
+    a[i*3]=Math.sin(ph)*Math.cos(th)*r;a[i*3+1]=Math.cos(ph)*r;a[i*3+2]=Math.sin(ph)*Math.sin(th)*r;
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.BufferAttribute(a,3));
+  const m=new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:36,sizeAttenuation:true,transparent:true,opacity:0,fog:false}));
+  scene.add(m);return m;
+})();
+// Earth — a huge sphere far below; its curve appears as you climb
+const earth=(()=>{
+  const R=20000;
+  const geo=new THREE.SphereGeometry(R,28,20);
+  const pos=geo.attributes.position,col=new Float32Array(pos.count*3);
+  const sea=new THREE.Color(0x2f6fb5),land=new THREE.Color(0x4e9a52),icec=new THREE.Color(0xe8f2fa),cc=new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+    const t=hash(Math.round(x/900)*3.1+Math.round(z/900)*7.7+Math.round(y/900)*1.3);
+    cc.copy(t>.62?land:sea);if(Math.abs(y)>R*.93)cc.copy(icec);
+    if(t>.9)cc.lerp(new THREE.Color(0xffffff),.5); // cloud swirls
+    col[i*3]=cc.r;col[i*3+1]=cc.g;col[i*3+2]=cc.b;
+  }
+  geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true,fog:false}));
+  m.position.y=-R-60;m.visible=false;scene.add(m);
+  const halo=new THREE.Mesh(new THREE.SphereGeometry(R*1.035,24,16),
+    new THREE.MeshBasicMaterial({color:0x5fa8e8,transparent:true,opacity:.16,side:THREE.BackSide,fog:false,depthWrite:false}));
+  halo.position.copy(m.position);scene.add(halo);m.userData.halo=halo;
+  return m;
+})();
+// KASPVR — the satellite. Box body, two solar wings, a dish, and the name in big letters.
+const kaspvr=(()=>{
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(22,9,9),flatMat(0xd8dde4));g.add(body);
+  const label=new THREE.Mesh(new THREE.PlaneGeometry(20,7),makeSign("KASPVR","#d8dde4","#22303f",512,128));
+  label.position.z=4.6;g.add(label);
+  const label2=new THREE.Mesh(new THREE.PlaneGeometry(20,7),makeSign("KASPVR","#d8dde4","#22303f",512,128));
+  label2.position.z=-4.6;label2.rotation.y=Math.PI;g.add(label2);
+  const panelMat=new THREE.MeshLambertMaterial({color:0x2456c9,emissive:0x11295e,flatShading:true});
+  for(const s of[-1,1]){
+    const wing=new THREE.Mesh(new THREE.BoxGeometry(26,.6,12),panelMat);
+    wing.position.x=s*26;g.add(wing);
+    const strut=new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,16,5),M.ink);
+    strut.rotation.z=Math.PI/2;strut.position.x=s*14;g.add(strut);
+  }
+  const dish=new THREE.Mesh(new THREE.SphereGeometry(4,8,6,0,Math.PI*2,0,Math.PI/2.4),flatMat(0xe8e2d2));
+  dish.rotation.x=Math.PI/1.7;dish.position.set(0,7.5,0);g.add(dish);
+  const ant=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,8,4),M.ink);ant.position.y=8;g.add(ant);
+  g.visible=false;scene.add(g);
+  g.userData.altFt=450000; // first low-orbit zone, right on the ascent path
+  return g;
+})();
+// Celestial bodies — each at its layer's altitude, offset from the flight path
+function ball(r,hex,opts){
+  const geo=new THREE.SphereGeometry(r,opts&&opts.seg||14,10);
+  let mat;
+  if(opts&&opts.bands){
+    const pos=geo.attributes.position,col=new Float32Array(pos.count*3);
+    const cs=opts.bands.map(h=>new THREE.Color(h)),cc=new THREE.Color();
+    for(let i=0;i<pos.count;i++){
+      const t=(pos.getY(i)/r+1)/2;
+      cc.copy(cs[Math.floor(t*cs.length)%cs.length]);
+      if(opts.noise&&hash(i*2.3)>.8)cc.multiplyScalar(.85);
+      col[i*3]=cc.r;col[i*3+1]=cc.g;col[i*3+2]=cc.b;
+    }
+    geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+    mat=new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true,fog:false});
+  } else mat=new THREE.MeshLambertMaterial({color:hex,flatShading:true,fog:false,...(opts&&opts.mat||{})});
+  return new THREE.Mesh(geo,mat);
+}
+const SPACE_BODIES=[];
+function addBody(mesh,altFt,dx,dz,name){
+  mesh.visible=false;mesh.userData={altFt,dx,dz,name};
+  scene.add(mesh);SPACE_BODIES.push(mesh);
+  return mesh;
+}
+const moon=addBody(ball(260,0x9aa0a6,{bands:[0x8d939a,0xa8aeb4,0x9aa0a6,0xb2b8be],noise:true}),1500000,900,-500,"Moon");
+addBody(ball(80,0x8d7a66),4000000,-700,300,"Mercury");
+addBody(ball(150,0xd9b26a),4000000,500,-700,"Venus");
+addBody(ball(120,0xc4553a),4300000,1400,400,"Mars");
+addBody(ball(420,0xd9a05a,{bands:[0xc9854a,0xe8c088,0xb56a3a,0xe0b070,0xc9854a,0xd9a05a],seg:20}),15000000,1200,-600,"Jupiter");
+const saturn=addBody(ball(340,0xdcc088,{bands:[0xd0b070,0xe8d8a8,0xc8a860,0xe0cc90],seg:20}),15600000,-1100,500,"Saturn");
+{
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(560,90,2,40),
+    new THREE.MeshLambertMaterial({color:0xcbb890,flatShading:true,fog:false}));
+  ring.scale.y=.06;ring.rotation.x=Math.PI/2.4;saturn.add(ring);
+}
+addBody(ball(190,0x8fd8dc),16400000,700,900,"Uranus");
+addBody(ball(190,0x3a5fd9),17000000,-500,-900,"Neptune");
+const pluto=addBody(ball(90,0xc9b8a8,{bands:[0xb8a898,0xd8c8b8,0xc0b0a0,0xe0d0c0],noise:true}),30000000,60,0,"Pluto");
+{ // Pluto's pale heart
+  const heart=new THREE.Mesh(new THREE.SphereGeometry(88,10,8,0,1.4,1,.9),
+    new THREE.MeshLambertMaterial({color:0xefe4d4,flatShading:true,fog:false}));
+  pluto.add(heart);
+}
+// Asteroid belt — a drifting band of rocks
+const belt=(()=>{
+  const g=new THREE.Group();
+  for(let i=0;i<70;i++){
+    const r=new THREE.Mesh(G.rock,M.rock);
+    r.position.set((Math.random()-.5)*4000,(Math.random()-.5)*700,(Math.random()-.5)*2200);
+    r.scale.setScalar(2+Math.random()*9);
+    r.rotation.set(Math.random()*3,Math.random()*3,0);
+    r.userData.rot=(Math.random()-.5)*.6;
+    g.add(r);
+  }
+  g.visible=false;scene.add(g);
+  g.userData={altFt:8000000};
+  return g;
+})();
+function updateSpace(dt){
+  const vy0=visY(p.alt);
+  const px=craft.position.x,pz=0;
+  // stars
+  starPts.position.copy(camera.position);
+  starPts.material.opacity=THREE.MathUtils.clamp((p.alt-200000)/200000,0,1)*(nightOn()?1:.95);
+  // Earth far below once you're high enough for the curve to read
+  const showEarth=p.alt>30000;
+  earth.visible=showEarth;earth.userData.halo.visible=p.alt>250000;
+  if(showEarth){
+    earth.position.x=px;earth.position.z=0;
+    earth.position.y=-20000-60+Math.min(14000,Math.max(0,(30000-p.alt)*.05));
+    earth.userData.halo.position.copy(earth.position);
+    earth.rotation.y=p.posMi*.00025; // the world turns beneath you
+  }
+  // KASPVR
+  const kd=Math.abs(p.alt-kaspvr.userData.altFt);
+  kaspvr.visible=kd<400000;
+  if(kaspvr.visible){
+    kaspvr.position.set(px+50,visY(kaspvr.userData.altFt),28);
+    kaspvr.rotation.y+=dt*.15;
+    if(flight.on&&kd<9000&&Math.abs(p.lat-28)<70){
+      earnStamp("hidden_kaspvr",null); // silent. no popup. you saw it. it saw you.
+    }
+  }
+  // bodies — each stays in its own layer's window so the zones feel distinct
+  for(const b of SPACE_BODIES){
+    if(cinema&&b===pluto){b.visible=true;continue} // the cinematic owns Pluto
+    const d=Math.abs(vy0-visY(b.userData.altFt));
+    b.visible=d<2600;
+    if(b.visible){
+      b.position.set(px+b.userData.dx,visY(b.userData.altFt),b.userData.dz);
+      b.rotation.y+=dt*.03;
+    }
+  }
+  // belt
+  belt.visible=Math.abs(vy0-visY(belt.userData.altFt))<3500;
+  if(belt.visible){
+    belt.position.set(px,visY(belt.userData.altFt),0);
+    for(const r of belt.children)r.rotation.y+=dt*r.userData.rot;
+  }
+}
+
+/* ---------------- Pluto landing cinematic ---------------- */
+let cinema=null;
+const PLUTO_RADIO=[
+  ["🗼 MISSION CONTROL","Jorge: Mission Control to pilot. Radar confirms... Pluto. YOU MADE IT."],
+  ["🔧 MIKEY","Mikey: THE TANKS HELD! THE TANKS HELD! WOOOOO!"],
+  ["🪽 SOPHIE","Sophie: darling, you've made the entire solar system jealous."],
+  ["🛠 NICO","Nico: not one crack. Told you."],
+  ["⚙ MATEO & GARY","Mateo: PLUTOOOO! Gary: ...we're proud of you, pilot. Both of us."],
+];
+function startPlutoCinema(){
+  cinema={t:0,step:0,type:"pluto"};
+  p.status="LANDING ON PLUTO";
+  ui.callit.classList.remove("show");
+}
+function cinemaTick(dt){
+  cinema.t+=dt;
+  // settle onto the little planet
+  const targetY=visY(ECON.plutoAlt)-96;
+  craft.position.y+=(targetY-craft.position.y)*Math.min(1,dt*2);
+  craft.rotation.z*=1-Math.min(1,dt*3);
+  pluto.position.set(craft.position.x+30,targetY-95,-20); // settle onto Pluto's surface
+  if(cinema.step===0&&cinema.t>1.2){
+    cinema.step=1;
+    ui.lapBannerH.textContent="YOU MADE IT";
+    ui.lapBannerS.innerHTML="Pluto. The edge of the map.<br>The whole crew is on the radio.";
+    ui.lapBanner.classList.add("show");
+    earnStamp("pluto",`🪐<br>PLUTO<br>THE EDGE OF THE MAP`);
+  }
+  const radioIdx=Math.floor((cinema.t-1.6)/2.1);
+  if(cinema.step>=1&&radioIdx>=0&&radioIdx<PLUTO_RADIO.length&&cinema.step===1+radioIdx){
+    cinema.step++;
+    towerMessage(PLUTO_RADIO[radioIdx][1],1900,PLUTO_RADIO[radioIdx][0]);
+    spawnFirework(craft.position.x+(Math.random()-.5)*160,craft.position.y+40+Math.random()*60,(Math.random()-.5)*160);
+  }
+  if(cinema.t>1.6+PLUTO_RADIO.length*2.1+1.2){
+    ui.lapBanner.classList.remove("show");
+    afterPlutoCinema();
+  }
+}
+function afterPlutoCinema(){
+  cinema=null;
+  endFlight("Landed on Pluto");
+}
+
+/* ---------------- Craft models: 8 forms, one per tier ---------------- */
 const craft=new THREE.Group();
-function buildPaperPlane(){
+scene.add(craft);
+let craftMesh=null,craftSpinners=[],boostFlame=null;
+function paperMat(hex){return new THREE.MeshLambertMaterial({color:hex,flatShading:true,side:THREE.DoubleSide})}
+function buildForm0(){ // Paper Plane
   const g=new THREE.Group();
   const geo=new THREE.BufferGeometry();
-  // simple folded dart: nose at +x
-  const v=new Float32Array([
-    // left wing (top)
-    9,0,0,  -7,.6,-6,  -5,0,0,
-    // right wing (top)
-    9,0,0,  -5,0,0,  -7,.6,6,
-    // keel
-    9,0,0,  -5,0,0,  -6,-2.2,0,
-  ]);
-  geo.setAttribute("position",new THREE.BufferAttribute(v,3));
+  geo.setAttribute("position",new THREE.BufferAttribute(new Float32Array([
+    9,0,0, -7,.6,-6, -5,0,0,   9,0,0, -5,0,0, -7,.6,6,   9,0,0, -5,0,0, -6,-2.2,0]),3));
   geo.computeVertexNormals();
-  const m=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0xf7f3e8,flatShading:true,side:THREE.DoubleSide}));
-  g.add(m);
+  g.add(new THREE.Mesh(geo,paperMat(0xf7f3e8)));
   return g;
 }
-let craftMesh=buildPaperPlane();
-craft.add(craftMesh);
-scene.add(craft);
+function buildForm1(){ // Balsa Glider
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(16,.9,1.4),flatMat(0xdcc9a0));g.add(body);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(4.4,.3,18),flatMat(0xe8dcc0));wing.position.set(2,.6,0);g.add(wing);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(2.6,.25,7),flatMat(0xe8dcc0));tail.position.set(-7,.5,0);g.add(tail);
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(2.6,3,.25),flatMat(0xd3271c));fin.position.set(-7,1.6,0);g.add(fin);
+  return g;
+}
+function buildForm2(){ // Canvas Prop Plane
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(1.6,10,3,7),flatMat(0xe8d9b0));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(3.6,.4,20),flatMat(0xd3271c));wing.position.set(1.5,1,0);g.add(wing);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(2.4,.35,8),flatMat(0xd3271c));tail.position.set(-6.4,.8,0);g.add(tail);
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(2,2.8,.3),flatMat(0xe8d9b0));fin.position.set(-6.6,2,0);g.add(fin);
+  const prop=new THREE.Group();
+  for(const r of[0,Math.PI/2]){
+    const bl=new THREE.Mesh(new THREE.BoxGeometry(.3,7,.8),flatMat(0x5b4a2b));bl.rotation.x=r;prop.add(bl);
+  }
+  prop.position.set(7.4,0,0);g.add(prop);craftSpinners.push(prop);
+  return g;
+}
+function buildForm3(){ // Aluminum Monoplane
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(1.8,11,3,8),flatMat(0xc9d0d8));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(4.4,.5,22),flatMat(0xb8c2cc));wing.position.set(1,-.6,0);g.add(wing);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(2.6,.4,9),flatMat(0xb8c2cc));tail.position.set(-7,.6,0);g.add(tail);
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(2.4,3.4,.4),flatMat(0x1d4ed8));fin.position.set(-7,2.2,0);g.add(fin);
+  const canopy=new THREE.Mesh(new THREE.SphereGeometry(1.5,8,6),new THREE.MeshLambertMaterial({color:0x9fd0e8,flatShading:true}));
+  canopy.scale.set(1.6,.9,.9);canopy.position.set(2.5,1.4,0);g.add(canopy);
+  const prop=new THREE.Group();
+  for(const r of[0,Math.PI/3,2*Math.PI/3]){
+    const bl=new THREE.Mesh(new THREE.BoxGeometry(.25,8,.7),flatMat(0x22303f));bl.rotation.x=r;prop.add(bl);
+  }
+  prop.position.set(8,0,0);g.add(prop);craftSpinners.push(prop);
+  return g;
+}
+function buildForm4(){ // Jet
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(1.7,13,3,8),flatMat(0xe8ecf2));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const nose=new THREE.Mesh(new THREE.ConeGeometry(1.5,4,8),flatMat(0x22303f));
+  nose.rotation.z=-Math.PI/2;nose.position.set(9.4,0,0);g.add(nose);
+  for(const s of[-1,1]){
+    const wgeo=new THREE.BufferGeometry();
+    wgeo.setAttribute("position",new THREE.BufferAttribute(new Float32Array([
+      3,0,s*1.2, -3,0,s*11, -5.5,0,s*1.2]),3));
+    wgeo.computeVertexNormals();
+    g.add(new THREE.Mesh(wgeo,paperMat(0xd0d8e2)));
+    const intake=new THREE.Mesh(new THREE.CylinderGeometry(1,1,3,7),flatMat(0x8f99a6));
+    intake.rotation.z=Math.PI/2;intake.position.set(-2,-.4,s*2.4);g.add(intake);
+  }
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(3,4,.4),flatMat(0xd3271c));fin.position.set(-7.5,2.4,0);g.add(fin);
+  return g;
+}
+function buildForm5(){ // Rocket-Plane X
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(2,12,3,8),flatMat(0xf2f2f0));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const stripe=new THREE.Mesh(new THREE.BoxGeometry(13,.8,4.3),flatMat(0xf59e0b));stripe.position.y=.6;g.add(stripe);
+  for(const s of[-1,1]){
+    const wing=new THREE.Mesh(new THREE.BoxGeometry(5,.5,6),flatMat(0x22303f));
+    wing.position.set(-2,0,s*4.6);g.add(wing);
+  }
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(3.4,4.4,.5),flatMat(0xf59e0b));fin.position.set(-6.6,2.6,0);g.add(fin);
+  const nozzle=new THREE.Mesh(new THREE.CylinderGeometry(1.6,2.2,2.6,8),flatMat(0x4a4f57));
+  nozzle.rotation.z=Math.PI/2;nozzle.position.set(-8.6,0,0);g.add(nozzle);
+  return g;
+}
+function buildForm6(){ // Orbital Craft
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(2.4,12,3,8),flatMat(0xf5f5f2));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const belly=new THREE.Mesh(new THREE.CapsuleGeometry(2.42,11.5,3,8),flatMat(0x2b323c));
+  belly.rotation.z=Math.PI/2;belly.position.y=-.5;belly.scale.y=.6;g.add(belly);
+  for(const s of[-1,1]){
+    const wgeo=new THREE.BufferGeometry();
+    wgeo.setAttribute("position",new THREE.BufferAttribute(new Float32Array([
+      4,0,s*1.5, -6,0,s*10, -7,0,s*1.5]),3));
+    wgeo.computeVertexNormals();
+    g.add(new THREE.Mesh(wgeo,paperMat(0xe8e8e2)));
+  }
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(3.4,4.6,.5),flatMat(0xf5f5f2));fin.position.set(-7,2.8,0);g.add(fin);
+  const cockpit=new THREE.Mesh(new THREE.SphereGeometry(1.9,8,6),new THREE.MeshLambertMaterial({color:0x22303f,flatShading:true}));
+  cockpit.scale.set(1.3,.75,.9);cockpit.position.set(5.6,1.1,0);g.add(cockpit);
+  for(let i=0;i<3;i++){
+    const noz=new THREE.Mesh(new THREE.CylinderGeometry(.9,1.3,1.8,7),flatMat(0x4a4f57));
+    noz.rotation.z=Math.PI/2;noz.position.set(-8.4,(i-1)*1.4,(i-1)*1.7);g.add(noz);
+  }
+  return g;
+}
+function buildForm7(){ // Star-Clipper
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(2,17,3,9),
+    new THREE.MeshLambertMaterial({color:0xe8ecf5,emissive:0x25304a,emissiveIntensity:.5,flatShading:true}));
+  body.rotation.z=Math.PI/2;g.add(body);
+  const prow=new THREE.Mesh(new THREE.ConeGeometry(2,7,8),flatMat(0xc9d4ec));
+  prow.rotation.z=-Math.PI/2;prow.position.set(13,0,0);g.add(prow);
+  const sailMat=new THREE.MeshLambertMaterial({color:0x9fd0ff,emissive:0x3a6aa8,emissiveIntensity:.8,
+    flatShading:true,transparent:true,opacity:.85,side:THREE.DoubleSide});
+  for(const s of[-1,1]){
+    const sgeo=new THREE.BufferGeometry();
+    sgeo.setAttribute("position",new THREE.BufferAttribute(new Float32Array([
+      6,0,s*1.6, -9,1.5,s*14, -9,0,s*3]),3));
+    sgeo.computeVertexNormals();
+    g.add(new THREE.Mesh(sgeo,sailMat));
+    const sgeo2=new THREE.BufferGeometry();
+    sgeo2.setAttribute("position",new THREE.BufferAttribute(new Float32Array([
+      2,2,s*.8, -8,9,s*5, -8,1.5,s*1]),3));
+    sgeo2.computeVertexNormals();
+    g.add(new THREE.Mesh(sgeo2,sailMat));
+  }
+  const keel=new THREE.Mesh(new THREE.BoxGeometry(8,3.2,.5),flatMat(0x8fa8d8));keel.position.set(-6,-2,0);g.add(keel);
+  return g;
+}
+const CRAFT_BUILDERS=[buildForm0,buildForm1,buildForm2,buildForm3,buildForm4,buildForm5,buildForm6,buildForm7];
 function setCraftForm(i){
-  craft.remove(craftMesh);
-  craftMesh=buildPaperPlane(); // Phase 3 swaps real forms
-  craftMesh.scale.setScalar(1+i*.15);
+  if(craftMesh)craft.remove(craftMesh);
+  craftSpinners=[];
+  craftMesh=CRAFT_BUILDERS[Math.min(i,CRAFT_BUILDERS.length-1)]();
+  craftMesh.scale.setScalar(1+i*.12);
   craft.add(craftMesh);
+  if(boostFlame)craft.remove(boostFlame);
+  boostFlame=new THREE.Mesh(new THREE.ConeGeometry(1.6,9,7),
+    new THREE.MeshBasicMaterial({color:0xffa53a,transparent:true,opacity:.85}));
+  boostFlame.rotation.z=Math.PI/2;
+  boostFlame.position.set(-11-i,0,0);
+  boostFlame.visible=false;
+  craft.add(boostFlame);
 }
 
 /* ---------------- Flight state & physics ---------------- */
@@ -1164,9 +1482,9 @@ function physTick(dt){
   // vertical
   let vyT;
   if(p.fuel>0){
-    const rate=inAtmo?st.climb:st.spaceClimb;
+    const rate=(inAtmo?st.climb:0)+st.spaceClimb; // rocket boost works everywhere
     if(!inAtmo&&rate<=0){vyT=-30;p.status="NO ROCKET BOOST — thin air"}
-    else vyT=p.pitch>0?p.pitch*rate:(p.pitch<-.05?p.pitch*260:0);
+    else vyT=p.pitch>0?p.pitch*rate:(p.pitch<-.05?p.pitch*Math.max(260,rate):0);
     if(p.alt<25&&vyT<0)vyT=0; // ground effect while powered
   }else{
     p.fallT+=dt;
@@ -1241,6 +1559,11 @@ function physTick(dt){
 
   // milestone: first cloud break etc (full set in later phases)
   if(p.alt>4000&&earnStamp("clouds_first","☁️<br>CLOUD BREAK"))towerMessage("Sophie says those wings look GORGEOUS above the clouds.",2200,"🪽 SOPHIE'S WING SHOP");
+
+  // Pluto! The edge of the map. (Phase 4 adds what comes after.)
+  if(p.alt>=ECON.plutoAlt&&!state.stamps.includes("pluto")&&!cinema){
+    startPlutoCinema();return;
+  }
 
   // descent begins
   if(p.fuel<=0&&p.vy<0&&!p.descent&&p.time>1){
@@ -1497,7 +1820,7 @@ let staticDirty=true;
 function fmtAlt(a){
   if(a<10000)return Math.round(a).toLocaleString()+" ft";
   if(a<1000000)return (a/1000).toFixed(1)+"k ft";
-  return (a/5280/1000).toFixed(0)+"k mi";
+  return Math.round(a/5280).toLocaleString()+" mi";
 }
 function renderStatic(){
   staticDirty=false;
@@ -1555,19 +1878,30 @@ function visualUpdate(dt){
     pad.position.x-=shift;
   }
   const px=gx-originOffset, py=Math.max(2,visY(p.alt)), pz=p.lat;
-  craft.position.set(px,py,pz);
-  const pitchAngle=THREE.MathUtils.clamp(Math.atan2(p.vy*.004,1),-.9,.9);
-  craft.rotation.set(-p.steerX*.5,0,pitchAngle);
+  if(!cinema){
+    craft.position.set(px,py,pz);
+    const pitchAngle=THREE.MathUtils.clamp(Math.atan2(p.vy*.004,1),-.9,.9);
+    craft.rotation.set(-p.steerX*.5,0,pitchAngle);
+  }
+  for(const sp of craftSpinners)sp.rotation.x+=dt*(p.fuel>0?26:4);
+  if(boostFlame){
+    boostFlame.visible=flight.on&&boostHeld&&p.fuel>0;
+    if(boostFlame.visible)boostFlame.scale.setScalar(.85+Math.random()*.35);
+  }
   // pad position (world start of current flight)
   pad.position.x=state.posMi*UPM-originOffset;
   pad.position.z=0;
   // chase cam — pulls back with speed
   const back=26+Math.min(60,p.spd*.05);
-  const target=new THREE.Vector3(px-back,py+9+Math.min(30,p.spd*.01),pz+back*.35);
+  const cp=craft.position;
+  const target=flight.on
+    ?new THREE.Vector3(cp.x-back,cp.y+9+Math.min(30,p.spd*.01),cp.z+back*.35)
+    :new THREE.Vector3(cp.x+26,16,72); // idle: frame the pad and the crew's buildings
   if(camPos.distanceTo(target)>3000)camPos.copy(target); // snap on load/teleport
   else camPos.lerp(target,Math.min(1,dt*3));
   camera.position.copy(camPos);
-  camera.lookAt(px+30,py+(flight.on?p.vy*.01:2),pz);
+  if(flight.on)camera.lookAt(cp.x+30,cp.y+(!cinema?p.vy*.01:2),cp.z);
+  else camera.lookAt(cp.x-34,6,-6);
   // sky & fog by altitude, tinted by lap mood (mood fades out toward space)
   const [top,fogC]=skyFor(p.alt);
   const moodK=Math.max(0,1-p.alt/150000);
@@ -1582,7 +1916,7 @@ function visualUpdate(dt){
     for(const s of c.spin)s.rotation.z+=dt*s.userData.spinRate;
     if(c.auroras&&nightOn())for(const a of c.auroras)a.material.opacity=.32+.2*Math.sin(tNow*.7+a.position.x*.01);
   }
-  updateFireworks(dt);updateWeather(dt);
+  updateFireworks(dt);updateWeather(dt);updateSpace(dt);
   updateChunks();updateClouds();updateCoins(dt);
 }
 
@@ -1593,15 +1927,18 @@ function loop(now){
   let dt=Math.min(.12,(now-lastT)/1000);
   lastT=now;
   if(flight.on){
-    acc+=dt;
-    while(acc>=STEP){
-      if(p.reentry){
-        reentryT-=STEP;
-        p.alt=Math.max(0,p.alt-p.alt*STEP*2.4);
-        if(reentryT<=0||p.alt<800){p.alt=0;endFlight("Landed")}
-      } else physTick(STEP);
-      acc-=STEP;
-      if(!flight.on)break;
+    if(cinema){cinemaTick(dt)}
+    else{
+      acc+=dt;
+      while(acc>=STEP){
+        if(p.reentry){
+          reentryT-=STEP;
+          p.alt=Math.max(0,p.alt-p.alt*STEP*2.4);
+          if(reentryT<=0||p.alt<800){p.alt=0;endFlight("Landed")}
+        } else physTick(STEP);
+        acc-=STEP;
+        if(!flight.on||cinema)break;
+      }
     }
   } else acc=0;
   visualUpdate(dt);
@@ -1611,6 +1948,10 @@ function loop(now){
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
 }
+// tiny dev/test hook (harmless in normal play)
+window.__PPO={getState:()=>state,getP:()=>p,setAlt:a=>{p.alt=a},setPos:m=>{p.posMi=m},
+  isCinema:()=>!!cinema,visY,stats,setCraftForm,renderer};
+
 setCraftForm(craftIndex(state.up));
 applyLapMood();
 renderStatic();
