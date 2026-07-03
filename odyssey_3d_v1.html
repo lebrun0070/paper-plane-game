@@ -133,6 +133,45 @@ h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;letter
 .reentry .rt{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);color:#ffd9a0;
   font-family:'Permanent Marker',cursive;font-size:30px;text-shadow:0 0 24px #ff6a00;letter-spacing:2px}
 
+/* ---------- Passport book ---------- */
+.passport{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;display:none;
+  width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 40px);overflow:auto;
+  background:var(--paper);border-radius:8px;border:1px solid rgba(60,45,20,.35);
+  box-shadow:0 24px 64px rgba(0,0,0,.55), inset 0 0 80px rgba(120,95,50,.08);padding:18px 20px}
+.passport.show{display:block}
+.passport h2{margin:0 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;color:var(--ink)}
+.passport .psub{font-size:12px;color:var(--ink2);margin-bottom:10px}
+.psec{font-family:'Permanent Marker',cursive;font-size:15px;color:var(--ink2);margin:14px 0 6px;
+  border-bottom:2px dashed rgba(60,45,20,.25);padding-bottom:3px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.pstamp{aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:6px;position:relative}
+.pstamp.earned{border:3px double var(--stampred);color:var(--stampred);background:rgba(163,39,31,.05);
+  font-family:'Permanent Marker',cursive}
+.pstamp.earned .ic{font-size:26px;line-height:1.1}
+.pstamp.earned .nm{font-size:10.5px;letter-spacing:.5px;margin-top:4px;line-height:1.2}
+.pstamp.earned.gold{border-color:#a67714;color:#a67714;background:rgba(212,164,44,.1)}
+.pstamp.blank{border:3px solid rgba(90,100,110,.35);background:rgba(120,130,140,.12)}
+.pstamp.blank::after{content:"";width:46%;height:46%;border-radius:50%;background:rgba(110,120,130,.4);
+  filter:blur(1px)}
+.pclose{width:100%;margin-top:14px}
+.lastpage{margin-top:16px;padding-top:8px;border-top:2px solid rgba(60,45,20,.3)}
+.lastpage .psec{border:none;color:#6a6258}
+.fadein{animation:fadein 3.5s ease}
+@keyframes fadein{0%{opacity:0}100%{opacity:1}}
+
+/* ---------- Quiet ending (Planet Nine) ---------- */
+.quiet{position:fixed;inset:0;z-index:90;background:#030308;display:none;align-items:center;justify-content:center;
+  flex-direction:column;gap:18px;opacity:0;transition:opacity 2.2s}
+.quiet.show{display:flex}
+.quiet.vis{opacity:1}
+.quiet .q1{font-family:'Permanent Marker',cursive;font-size:30px;color:#9a92b8;letter-spacing:3px}
+.quiet .q2{font-family:'Nunito',sans-serif;font-weight:600;font-size:15px;color:#5f5a75;max-width:480px;
+  text-align:center;line-height:1.8}
+.quiet button{margin-top:18px;background:none;border:1px solid #4a4560;color:#8a84a5;border-radius:6px;
+  padding:10px 26px;font-size:14px;font-weight:800;cursor:pointer}
+.didyou{transition:1.4s;font-family:'Permanent Marker',cursive}
+
 /* ---------- Modals ---------- */
 .modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);color:var(--ink);
   border-radius:8px;padding:20px;width:min(420px,calc(100vw - 32px));z-index:60;text-align:center;
@@ -208,7 +247,8 @@ h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;letter
     <b>Controls:</b> Drag up/down (or W/S, ↑/↓) to pitch. Drag left/right (or A/D, ←/→) to weave. Hold the red button or Space to boost.
     <br><b>Two roads:</b> around the world, and straight up. They feed each other.
   </div>
-  <div id="passportBox" class="box"><b>Passport:</b> <span id="passportMini">1 stamp</span></div>
+  <div id="passportBox" class="box"><b>Passport:</b> <span id="passportMini">1 stamp</span>
+    <button id="passportBtn" class="bigbtn" style="font-size:15px;margin-top:8px;background:#22303f;box-shadow:0 4px 0 #0e161f">📕 OPEN PASSPORT</button></div>
   <div class="box legacybox">
     <b>Legacy:</b> <span id="legacyStars">0</span>⭐ (+<span id="legacyPct">0</span>% earnings forever)
     <button id="prestige" class="bigbtn" style="background:#7c3aed;box-shadow:0 4px 0 #4c1d95;font-size:15px;margin-top:8px">RETIRE &amp; EARN STARS</button>
@@ -232,6 +272,18 @@ h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;letter
   <div class="line"><span id="sumDist">0</span> mi flown · peak <span id="sumAlt">0</span> ft</div>
   <div class="coins">+$<span id="sumCoins">0</span></div>
   <div class="line" id="sumNote" style="font-weight:600;color:var(--ink2)"></div>
+</div>
+
+<div id="passportModal" class="passport">
+  <h2>📕 Passport</h2>
+  <div class="psub">Issued at the home meadow. Stamped by Jorge. Blank pages are none of your business.</div>
+  <div id="passportPages"></div>
+  <button id="passportClose" class="bigbtn pclose" style="background:#22303f;box-shadow:0 4px 0 #0e161f">Close</button>
+</div>
+<div id="quietEnd" class="quiet">
+  <div class="q1" id="quietH">PLANET NINE</div>
+  <div class="q2" id="quietT"></div>
+  <button id="quietBtn" style="display:none">go home</button>
 </div>
 
 <div id="confirmReset" class="modal"><h2>Reset save?</h2><p>This wipes your money, upgrades, passport, laps, and Legacy Stars. There's no undo.</p>
@@ -389,13 +441,15 @@ wstrip:$("wstrip"),wstripBar:$("wstripBar"),wstripPlane:$("wstripPlane"),wstripL
 summary:$("summary"),sumDist:$("sumDist"),sumAlt:$("sumAlt"),sumCoins:$("sumCoins"),sumNote:$("sumNote"),
 confirmReset:$("confirmReset"),confirmYes:$("confirmYes"),confirmNo:$("confirmNo"),
 confirmPrestige:$("confirmPrestige"),prestigeText:$("prestigeText"),prestigeYes:$("prestigeYes"),prestigeNo:$("prestigeNo"),
-lapBanner:$("lapBanner"),lapBannerH:$("lapBannerH"),lapBannerS:$("lapBannerS")};
+lapBanner:$("lapBanner"),lapBannerH:$("lapBannerH"),lapBannerS:$("lapBannerS"),
+passportBtn:$("passportBtn"),passportModal:$("passportModal"),passportPages:$("passportPages"),passportClose:$("passportClose"),
+quietEnd:$("quietEnd"),quietH:$("quietH"),quietT:$("quietT"),quietBtn:$("quietBtn")};
 
 /* ---------------- State & save ---------------- */
 const saveKey="paperPlaneOdyssey3Dv1";
 let state={money:0,lifetime:0,laps:0,posMi:0,bestAlt:0,bestDist:0,stars:0,prestiges:0,flights:0,sound:true,
   up:{engine:0,aero:0,fuel:0,boost:0,lift:0,hull:0},
-  stamps:["home_meadow"],hangar:[0],shop:"mateoGary",milestones:{}};
+  stamps:["biome_home_meadow"],hangar:[0],shop:"mateoGary",milestones:{}};
 const store={
   get(){try{return JSON.parse(localStorage.getItem(saveKey))}catch(e){return null}},
   set(v){try{localStorage.setItem(saveKey,JSON.stringify(v))}catch(e){}},
@@ -404,7 +458,7 @@ const store={
 function save(){store.set(state)}
 function load(){const s=store.get();if(!s)return;
   state={...state,...s};state.up={engine:0,aero:0,fuel:0,boost:0,lift:0,hull:0,...(s.up||{})};
-  state.stamps=s.stamps||["home_meadow"];state.milestones=s.milestones||{};}
+  state.stamps=s.stamps||["biome_home_meadow"];state.milestones=s.milestones||{};}
 load();
 
 /* ---------------- Tiny synth (v10 DNA, no assets) ---------------- */
@@ -452,13 +506,84 @@ function towerMessage(text,time,name){
   clearTimeout(towerTimer);towerTimer=setTimeout(()=>ui.tower.style.display="none",time||1900);
 }
 
-/* ---------------- Stamps (full passport UI arrives with the office) ---------------- */
+/* ---------------- Passport: the trophy case ----------------
+   Earned stamps display fully. Unearned ones are UNLABELED gray
+   silhouettes — no names, no hints, no tooltips. Go discover them. */
+const STAMP_DEFS=[
+  {sec:"Circumnavigation",items:[
+    {id:"lap_1",ic:"🌍",nm:"LAP 1",gold:true},
+    {id:"lap_2",ic:"🌍",nm:"LAP 2",gold:true},
+    {id:"lap_3",ic:"🌍",nm:"LAP 3",gold:true},
+    {id:"lap_4",ic:"🌍",nm:"LAP 4",gold:true},
+  ]},
+  {sec:"Altitude",items:[
+    {id:"clouds_first",ic:"☁️",nm:"CLOUD BREAK"},
+    {id:"high_alt",ic:"🌐",nm:"HIGH ALTITUDE"},
+    {id:"stratosphere",ic:"🟣",nm:"STRATOSPHERE"},
+    {id:"orbit",ic:"🛰️",nm:"LOW ORBIT"},
+    {id:"moon",ic:"🌕",nm:"MOON FLYBY"},
+    {id:"inner_planets",ic:"🔴",nm:"INNER PLANETS"},
+    {id:"asteroid_belt",ic:"🪨",nm:"ASTEROID BELT"},
+    {id:"outer_planets",ic:"🪐",nm:"OUTER PLANETS"},
+    {id:"pluto",ic:"❄️",nm:"PLUTO"},
+  ]},
+  {sec:"Biomes",items:[
+    {id:"biome_home_meadow",ic:"🌼",nm:"HOME MEADOW"},
+    {id:"biome_farmland",ic:"🌾",nm:"FARMLAND"},
+    {id:"biome_ocean",ic:"🌊",nm:"OCEAN"},
+    {id:"biome_tropics",ic:"🌴",nm:"TROPICS"},
+    {id:"biome_desert",ic:"🏜️",nm:"DESERT"},
+    {id:"biome_jungle",ic:"🌿",nm:"JUNGLE"},
+    {id:"biome_mountains",ic:"⛰️",nm:"MOUNTAINS"},
+    {id:"biome_arctic",ic:"🧊",nm:"ARCTIC"},
+  ]},
+  {sec:"Discoveries",items:[ // hidden until earned — silhouettes only
+    {id:"hidden_kaspvr",ic:"📡",nm:"SAID HI TO KASPVR"},
+    {id:"hidden_arch",ic:"🪨",nm:"THREADED THE ARCH"},
+    {id:"hidden_ocean_skim",ic:"🌊",nm:"WAVE SKIMMER"},
+    {id:"hidden_whale",ic:"🐋",nm:"BUZZED A WHALE"},
+    {id:"hidden_aurora",ic:"🌌",nm:"AURORA DANCER"},
+    {id:"hidden_storm",ic:"⚡",nm:"STORM RIDER"},
+  ]},
+];
+const P9_STAMP={id:"planet9",ic:"🕳️",nm:"PLANET NINE"};
 function earnStamp(id,popText){
   if(state.stamps.includes(id))return false;
   state.stamps.push(id);
   if(popText)popStamp(popText);
   save();staticDirty=true;return true;
 }
+function renderPassport(){
+  let html="";
+  for(const sec of STAMP_DEFS){
+    // show extra lap stamps beyond the printed pages
+    let items=sec.items;
+    if(sec.sec==="Circumnavigation"&&state.laps>4){
+      items=items.slice();
+      for(let l=5;l<=state.laps;l++)items.push({id:"lap_"+l,ic:"🌍",nm:"LAP "+l,gold:true});
+    }
+    html+=`<div class="psec">${sec.sec}</div><div class="pgrid">`;
+    for(const it of items){
+      const got=state.stamps.includes(it.id);
+      html+=got
+        ?`<div class="pstamp earned${it.gold?" gold":""}" style="transform:rotate(${((it.id.length*7)%9)-4}deg)"><div class="ic">${it.ic}</div><div class="nm">${it.nm}</div></div>`
+        :`<div class="pstamp blank"></div>`;
+    }
+    html+=`</div>`;
+  }
+  // the last page — it wasn't there before Pluto. no explanation.
+  if(state.stamps.includes("pluto")){
+    const got9=state.stamps.includes(P9_STAMP.id);
+    html+=`<div class="lastpage fadein"><div class="psec">&nbsp;</div><div class="pgrid">`;
+    html+=got9
+      ?`<div class="pstamp earned" style="border-color:#4a4560;color:#6a6488;background:rgba(60,55,90,.12)"><div class="ic">${P9_STAMP.ic}</div><div class="nm">${P9_STAMP.nm}</div></div>`
+      :`<div class="pstamp blank"></div>`;
+    html+=`</div></div>`;
+  }
+  ui.passportPages.innerHTML=html;
+}
+ui.passportBtn.onclick=()=>{renderPassport();ui.passportModal.classList.add("show")};
+ui.passportClose.onclick=()=>ui.passportModal.classList.remove("show");
 
 /* ---------------- Three.js scene ---------------- */
 const renderer=new THREE.WebGLRenderer({antialias:true});
@@ -588,6 +713,7 @@ function whale(){
   spout.position.set(4,10,0);g.add(spout);
   return g;
 }
+whale.propName="whale";
 function sailboat(){
   const g=new THREE.Group();
   const hull=new THREE.Mesh(new THREE.CylinderGeometry(2.4,1,8,4,1),flatMat(0x8a5a2b));
@@ -747,7 +873,8 @@ function makeChunk(idx){
   const makers=propsFor(b);
   const n=b.water?5:20;
   for(let i=0;i<n;i++){
-    const pr=makers[Math.floor(hash(idx*31+i*7)*makers.length)]();
+    const makerFn=makers[Math.floor(hash(idx*31+i*7)*makers.length)];
+    const pr=makerFn();
     const lx=hash(idx*17+i*3)*CHUNK, lz=(hash(idx*11+i*5)-.5)*900;
     const gx=idx*CHUNK+lx;
     const s=.8+hash(idx+i)*1.5;
@@ -758,7 +885,7 @@ function makeChunk(idx){
     else pr.rotation.y=hash(i*9)*6.28;
     if(!pr.userData.isArch)pr.scale.setScalar(s);
     group.add(pr);
-    nearMiss.push({gx,z:lz,r:7*s,h:16*s});
+    nearMiss.push({gx,z:lz,r:7*s,h:16*s,kind:makerFn.propName||""});
   }
   // arctic auroras (visible on night laps)
   const auroras=[];
@@ -1172,6 +1299,18 @@ const pluto=addBody(ball(90,0xc9b8a8,{bands:[0xb8a898,0xd8c8b8,0xc0b0a0,0xe0d0c0
     new THREE.MeshLambertMaterial({color:0xefe4d4,flatShading:true,fog:false}));
   pluto.add(heart);
 }
+// Planet Nine — dark, faintly glowing, wrong. Not like the bright ones.
+const planet9=(()=>{
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.IcosahedronGeometry(170,1),
+    new THREE.MeshLambertMaterial({color:0x14101e,emissive:0x2a2044,emissiveIntensity:.85,flatShading:true,fog:false}));
+  g.add(body);
+  const glow=new THREE.Mesh(new THREE.SphereGeometry(210,18,12),
+    new THREE.MeshBasicMaterial({color:0x4a3a78,transparent:true,opacity:.1,side:THREE.BackSide,
+      blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  g.add(glow);
+  return addBody(g,75000000,80,0,"Planet Nine");
+})();
 // Asteroid belt — a drifting band of rocks
 const belt=(()=>{
   const g=new THREE.Group();
@@ -1214,7 +1353,7 @@ function updateSpace(dt){
   }
   // bodies — each stays in its own layer's window so the zones feel distinct
   for(const b of SPACE_BODIES){
-    if(cinema&&b===pluto){b.visible=true;continue} // the cinematic owns Pluto
+    if(cinema&&((cinema.type==="pluto"&&b===pluto)||(cinema.type==="p9"&&b===planet9))){b.visible=true;continue}
     const d=Math.abs(vy0-visY(b.userData.altFt));
     b.visible=d<2600;
     if(b.visible){
@@ -1244,35 +1383,102 @@ function startPlutoCinema(){
   p.status="LANDING ON PLUTO";
   ui.callit.classList.remove("show");
 }
+function startP9Cinema(){
+  cinema={t:0,step:0,type:"p9"};
+  p.status="...";
+  ui.callit.classList.remove("show");
+}
 function cinemaTick(dt){
   cinema.t+=dt;
+  if(cinema.type==="pluto")plutoTick();
+  else p9Tick();
+}
+function plutoTick(){
+  const dt=1/60;
   // settle onto the little planet
   const targetY=visY(ECON.plutoAlt)-96;
   craft.position.y+=(targetY-craft.position.y)*Math.min(1,dt*2);
   craft.rotation.z*=1-Math.min(1,dt*3);
-  pluto.position.set(craft.position.x+30,targetY-95,-20); // settle onto Pluto's surface
+  pluto.position.set(craft.position.x+30,targetY-95,-20);
   if(cinema.step===0&&cinema.t>1.2){
     cinema.step=1;
     ui.lapBannerH.textContent="YOU MADE IT";
+    ui.lapBannerH.className="h didyou";
     ui.lapBannerS.innerHTML="Pluto. The edge of the map.<br>The whole crew is on the radio.";
     ui.lapBanner.classList.add("show");
     earnStamp("pluto",`🪐<br>PLUTO<br>THE EDGE OF THE MAP`);
   }
   const radioIdx=Math.floor((cinema.t-1.6)/2.1);
-  if(cinema.step>=1&&radioIdx>=0&&radioIdx<PLUTO_RADIO.length&&cinema.step===1+radioIdx){
+  if(cinema.step>=1&&cinema.step<90&&radioIdx>=0&&radioIdx<PLUTO_RADIO.length&&cinema.step===1+radioIdx){
     cinema.step++;
     towerMessage(PLUTO_RADIO[radioIdx][1],1900,PLUTO_RADIO[radioIdx][0]);
     spawnFirework(craft.position.x+(Math.random()-.5)*160,craft.position.y+40+Math.random()*60,(Math.random()-.5)*160);
   }
-  if(cinema.t>1.6+PLUTO_RADIO.length*2.1+1.2){
+  const tEnd=1.6+PLUTO_RADIO.length*2.1;
+  // the text settles. a pause. and then—
+  if(cinema.step<90&&cinema.t>tEnd+1.4){
+    cinema.step=90;
+    ui.lapBannerS.innerHTML="&nbsp;";
+  }
+  if(cinema.step===90&&cinema.t>tEnd+3.0){
+    cinema.step=91;
+    ui.lapBannerH.textContent="...did you?";
+    ui.lapBannerH.style.color="#5b6a7a";
+    ui.lapBannerH.style.fontSize="26px";
+    beep(98,1.6,"sine",.08); // the tone shifts, just slightly
+  }
+  if(cinema.step===91&&cinema.t>tEnd+6.2){
+    cinema.step=92;
     ui.lapBanner.classList.remove("show");
-    afterPlutoCinema();
+    // one final unlabeled silhouette fades into the passport's last page.
+    // no further explanation.
+    setTimeout(()=>{ui.lapBannerH.style.color="";ui.lapBannerH.style.fontSize="";ui.lapBannerH.className="h"},600);
+    cinema=null;
+    endFlight("Landed on Pluto");
   }
 }
-function afterPlutoCinema(){
-  cinema=null;
-  endFlight("Landed on Pluto");
+/* Planet Nine: no crowd. no fireworks. it's very quiet out here. */
+const P9_LINES=[
+  [2.5,"There is no radio chatter this far out."],
+  [5.5,"No crowd. No fireworks. Just a dark place that isn't on any map,"],
+  [8.2,"and a pilot who found it anyway."],
+  [11.2,"The last stamp presses itself into the final page."],
+];
+function p9Tick(){
+  const dt=1/60;
+  const targetY=visY(ECON.planet9Alt)-178;
+  craft.position.y+=(targetY-craft.position.y)*Math.min(1,dt*2);
+  craft.rotation.z*=1-Math.min(1,dt*3);
+  planet9.position.set(craft.position.x+40,targetY-172,-30);
+  if(cinema.step===0){
+    cinema.step=1;
+    ui.quietEnd.classList.add("show");
+    requestAnimationFrame(()=>ui.quietEnd.classList.add("vis"));
+    ui.quietT.innerHTML="";
+    beep(64,2.5,"sine",.06);
+  }
+  for(let i=0;i<P9_LINES.length;i++){
+    if(cinema.step===1+i&&cinema.t>P9_LINES[i][0]){
+      cinema.step++;
+      ui.quietT.innerHTML+=(i?"<br>":"")+P9_LINES[i][1];
+      if(i===P9_LINES.length-1){
+        earnStamp("planet9",null);
+        sfx.stamp();
+      }
+    }
+  }
+  if(cinema.step===1+P9_LINES.length&&cinema.t>13.5){
+    cinema.step=99;
+    ui.quietBtn.style.display="block";
+  }
 }
+ui.quietBtn.onclick=()=>{
+  ui.quietEnd.classList.remove("vis");
+  setTimeout(()=>ui.quietEnd.classList.remove("show"),2200);
+  ui.quietBtn.style.display="none";
+  cinema=null;
+  endFlight("Returned from the dark");
+};
 
 /* ---------------- Craft models: 8 forms, one per tier ---------------- */
 const craft=new THREE.Group();
@@ -1540,6 +1746,7 @@ function physTick(dt){
           const v=Math.floor(18*stats().mult);
           p.stuntCoins+=v;sfx.coin(3);
           msg(`😬 NEAR MISS +$${v}`);
+          if(nm.kind==="whale"&&earnStamp("hidden_whale",null))msg("🐋 It waved back. Probably.");
         }
       }
       for(const ar of c.arches){
@@ -1557,12 +1764,40 @@ function physTick(dt){
     }
   }
 
-  // milestone: first cloud break etc (full set in later phases)
+  // altitude milestone stamps
   if(p.alt>4000&&earnStamp("clouds_first","☁️<br>CLOUD BREAK"))towerMessage("Sophie says those wings look GORGEOUS above the clouds.",2200,"🪽 SOPHIE'S WING SHOP");
+  if(p.alt>30000)earnStamp("high_alt","🌐<br>HIGH ALTITUDE<br>the horizon curves");
+  if(p.alt>100000&&earnStamp("stratosphere","🟣<br>STRATOSPHERE"))towerMessage("Jorge's Control Tower: sky's gone purple on the cameras. Incredible.",2200);
+  if(p.alt>400000&&earnStamp("orbit","🛰️<br>LOW ORBIT"))towerMessage("Mission Control: orbit confirmed. The tower is going nuts down here.",2400,"🗼 MISSION CONTROL");
+  if(p.alt>1500000)earnStamp("moon","🌕<br>MOON FLYBY");
+  if(p.alt>4000000)earnStamp("inner_planets","🔴<br>INNER PLANETS");
+  if(p.alt>8000000)earnStamp("asteroid_belt","🪨<br>ASTEROID BELT");
+  if(p.alt>15000000)earnStamp("outer_planets","🪐<br>OUTER PLANETS");
 
-  // Pluto! The edge of the map. (Phase 4 adds what comes after.)
+  // biome first-visit stamps
+  const curBiome=BIOMES[biomeIdxAt(p.posMi)];
+  earnStamp("biome_"+curBiome.key,state.stamps.includes("biome_"+curBiome.key)?null:`🗺️<br>${curBiome.name.toUpperCase()}`);
+
+  // hidden discoveries (quiet — they surface in the passport)
+  if(curBiome.key==="ocean"&&p.alt<60&&p.spd>120){
+    p.skimT=(p.skimT||0)+dt;
+    if(p.skimT>3&&earnStamp("hidden_ocean_skim",null))msg("🌊 The spray is in your teeth.");
+  } else p.skimT=0;
+  if(curBiome.key==="arctic"&&nightOn()&&p.alt>12000&&p.alt<45000){
+    if(earnStamp("hidden_aurora",null))msg("🌌 You fly straight through the lights.");
+  }
+  if(stormOn()&&p.alt>10000&&p.alt<80000){
+    p.stormT=(p.stormT||0)+dt;
+    if(p.stormT>8&&earnStamp("hidden_storm",null))msg("⚡ The storm couldn't catch you.");
+  }
+
+  // Pluto! The edge of the map. ...isn't it?
   if(p.alt>=ECON.plutoAlt&&!state.stamps.includes("pluto")&&!cinema){
     startPlutoCinema();return;
+  }
+  // and far, far beyond it — something dark
+  if(p.alt>=ECON.planet9Alt&&state.stamps.includes("pluto")&&!state.stamps.includes("planet9")&&!cinema){
+    startP9Cinema();return;
   }
 
   // descent begins
