@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Paper Plane Odyssey V10 — Workshop Rebuild</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Nunito:wght@600;800;1000&display=swap');
+:root{
+  --paper:#f6efe0; --paper2:#efe5cf; --ink:#22303f; --ink2:#5b6a7a;
+  --tape:rgba(255,214,120,.85); --sky:#87ceeb; --danger:#a3271f;
+  --stampred:#a3271f; --go:#1f7a4d; --card:#22303f;
+}
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:'Nunito',system-ui,sans-serif;background:var(--sky);color:var(--ink);touch-action:manipulation}
+#c{display:block;width:100vw;height:100vh;touch-action:none;user-select:none;-webkit-user-select:none}
+#speedo{width:180px;height:104px}
+button{font-family:inherit}
+
+/* ---------- Workshop clipboard panel ---------- */
+.panel{position:absolute;left:14px;top:14px;width:min(430px,calc(100vw - 28px));max-height:calc(100vh - 28px);
+  overflow:auto;padding:16px 16px 14px;background:var(--paper);border-radius:6px;z-index:10;transition:.28s;
+  border:1px solid rgba(60,45,20,.25);
+  box-shadow:0 14px 36px rgba(20,30,50,.28), inset 0 0 60px rgba(120,95,50,.07);}
+.panel::before,.panel::after{content:"";position:absolute;top:-9px;width:88px;height:24px;background:var(--tape);
+  box-shadow:0 1px 3px rgba(0,0,0,.15);opacity:.9}
+.panel::before{left:22px;transform:rotate(-4deg)}
+.panel::after{right:22px;transform:rotate(3deg)}
+.panel.hidden{transform:translateX(-115%);opacity:0;pointer-events:none}
+h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:25px;letter-spacing:.5px;color:var(--ink)}
+.sub{font-size:12px;color:var(--ink2);line-height:1.4;margin-bottom:10px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;margin-bottom:8px}
+.stat{background:rgba(255,255,255,.55);border:1px dashed rgba(60,45,20,.3);padding:7px 9px;border-radius:4px;font-weight:800}
+.stat b{font-weight:1000}
+.stage{background:rgba(255,255,255,.5);border-left:4px solid var(--go);border-radius:4px;padding:8px 10px;margin:8px 0;font-size:13px;font-weight:800;line-height:1.45}
+label{display:block;font-size:13px;font-weight:800;margin:8px 0 3px}
+input[type=range]{width:100%;accent-color:var(--ink)}
+.bigbtn{width:100%;border:0;border-radius:6px;padding:12px;margin-top:8px;background:var(--go);color:#fff;
+  font-size:17px;font-weight:1000;letter-spacing:.6px;cursor:pointer;font-family:'Permanent Marker',cursive;
+  box-shadow:0 4px 0 #145434;transition:transform .06s}
+.bigbtn:active{transform:translateY(3px);box-shadow:0 1px 0 #145434}
+.bigbtn:disabled{background:#9aa4ae;box-shadow:0 4px 0 #6e7780;cursor:not-allowed}
+.tabs{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin:12px 0 8px}
+.tab{border:1px solid rgba(60,45,20,.3);background:rgba(255,255,255,.45);color:var(--ink);font-size:12px;
+  font-weight:800;padding:9px 5px;border-radius:4px;cursor:pointer}
+.tab.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.shopTitle{border-radius:5px;padding:10px 12px;margin:8px 0;font-weight:900;color:#fff;background:var(--card)}
+.shopTitle small{display:block;color:rgba(255,255,255,.75);font-weight:600;line-height:1.3;margin-top:4px}
+.upgrade{width:100%;border:0;border-radius:5px;padding:11px 12px;margin-top:6px;background:var(--card);color:#fff;
+  display:flex;align-items:center;justify-content:space-between;text-align:left;gap:10px;cursor:pointer;font-size:14px;font-weight:800}
+.upgrade:disabled{opacity:.55;cursor:not-allowed}
+.upgrade small{display:block;color:rgba(255,255,255,.72);font-weight:500;line-height:1.3;margin-top:2px}
+.upgrade .price{white-space:nowrap;font-weight:1000}
+.box{margin-top:10px;padding:9px 11px;border-radius:4px;background:rgba(255,255,255,.5);
+  border:1px dashed rgba(60,45,20,.3);font-size:12px;line-height:1.5}
+.box b{font-weight:1000}
+.hangar{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:5px}
+.hangar span{background:rgba(255,255,255,.6);border-radius:4px;padding:4px 6px}
+.hangar .got{background:#d7ecd9;text-decoration:none;font-weight:800}
+.rowbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.smallbtn{border:0;border-radius:5px;padding:9px;font-size:13px;font-weight:900;cursor:pointer;color:#fff}
+.resetbtn{background:var(--danger)}
+.soundbtn{background:var(--ink)}
+
+/* ---------- Flight HUD ---------- */
+.hud{position:absolute;left:14px;top:14px;display:none;padding:11px 14px;border-radius:8px;color:#fff;
+  background:rgba(23,32,45,.9);z-index:11;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:14px;font-weight:800;line-height:1.5;min-width:215px}
+.hud.show{display:block}
+.hud .big{font-family:'Permanent Marker',cursive;font-size:19px;letter-spacing:.4px}
+.fuelWrap{height:12px;background:rgba(255,255,255,.2);border-radius:999px;overflow:hidden;margin-top:4px;border:1px solid rgba(255,255,255,.35)}
+.fuelBar{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#facc15,#ef4444);transition:width .08s linear}
+.hiddenFuel{display:none}
+.steerWrap{height:10px;background:rgba(255,255,255,.2);border-radius:999px;position:relative;margin-top:4px;border:1px solid rgba(255,255,255,.35);overflow:hidden}
+.steerDot{position:absolute;left:50%;top:0;width:10px;height:100%;background:#7dd3fc;border-radius:999px;transform:translateX(-50%);transition:left .05s linear}
+.combo{margin-top:6px;color:#fde047;font-weight:1000;display:none}
+.combo.show{display:block;animation:pulse .5s ease}
+@keyframes pulse{0%{transform:scale(1.25)}100%{transform:scale(1)}}
+
+/* ---------- Tower ticker ---------- */
+.tower{position:absolute;left:50%;top:12px;transform:translateX(-50%);display:none;background:#101820;color:#ffd76e;
+  padding:9px 20px;border-radius:6px;z-index:50;text-align:center;font-weight:800;letter-spacing:.5px;
+  border:1px solid rgba(255,215,110,.35);box-shadow:0 8px 22px rgba(0,0,0,.35);max-width:calc(100vw - 24px)}
+.tower .t{font-family:'Permanent Marker',cursive;font-size:13px;color:#8fa3b8;letter-spacing:1px}
+.tower .m{font-size:15px;margin-top:2px}
+
+/* ---------- Messages / stamps ---------- */
+.msg{position:absolute;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:rgba(23,32,45,.94);
+  color:#fff;padding:10px 20px;border-radius:999px;font-weight:900;z-index:20;opacity:0;pointer-events:none;
+  white-space:nowrap;transition:.22s;max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
+.msg.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.stamp{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%) rotate(-7deg) scale(.8);
+  color:var(--stampred);border:5px double var(--stampred);background:rgba(246,239,224,.92);padding:14px 26px;
+  border-radius:8px;font-size:26px;font-weight:1000;letter-spacing:1px;z-index:22;opacity:0;pointer-events:none;
+  transition:.22s;text-align:center;font-family:'Permanent Marker',cursive;line-height:1.3}
+.stamp.show{opacity:1;transform:translate(-50%,-50%) rotate(-7deg) scale(1)}
+.workbench{position:absolute;right:14px;bottom:14px;background:rgba(23,32,45,.92);color:#fff;border-radius:8px;
+  padding:12px 16px;z-index:18;font-weight:900;display:none;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.workbench.show{display:block;animation:bump .7s ease}
+@keyframes bump{0%{transform:translateY(28px);opacity:0}55%{transform:translateY(-5px);opacity:1}100%{transform:translateY(0)}}
+
+/* ---------- Boost button ---------- */
+.boostBtn{position:absolute;right:18px;bottom:18%;width:90px;height:90px;border-radius:50%;
+  background:radial-gradient(circle at 35% 32%,#ff7a6b,#d3271c 62%,#8f1712);color:#fff;border:5px solid #f6c9c2;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:15;font-size:30px;display:none;align-items:center;justify-content:center;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:pointer}
+.boostBtn.show{display:flex}
+.boostBtn:active{transform:scale(.94)}
+
+/* ---------- Tutorial / confirm ---------- */
+.modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--paper);color:var(--ink);
+  border-radius:8px;padding:20px;width:min(410px,calc(100vw - 32px));z-index:60;text-align:center;
+  box-shadow:0 16px 48px rgba(0,0,0,.5);display:none;border:1px solid rgba(60,45,20,.3)}
+.modal.show{display:block}
+.modal h2{margin:0 0 8px;font-family:'Permanent Marker',cursive;font-size:22px}
+.modal p{margin:0 0 14px;line-height:1.5;font-weight:600}
+.modal .bigbtn{margin-top:0}
+.modal .rowbtns{margin-top:0}
+
+@media(max-width:700px){
+  .panel{top:auto;bottom:10px;left:10px;width:calc(100vw - 20px);max-height:62vh;padding:12px}
+  .panel.hidden{transform:translateY(130%)}
+  h1{font-size:20px}.stats{font-size:12px}
+  .hud{font-size:12px;min-width:0;max-width:calc(100vw - 28px)}
+  .stamp{font-size:19px;padding:11px 18px}
+  .boostBtn{width:80px;height:80px;bottom:14%}
+}
+@media(prefers-reduced-motion:reduce){
+  .panel,.msg,.stamp,.workbench{transition:none;animation:none}
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hud">
+  <div class="big"><span id="liveDist">0</span> mi &nbsp;·&nbsp; <span id="liveAlt">0</span> ft</div>
+  <canvas id="speedo" width="180" height="104" style="display:block;margin:4px auto 2px"></canvas>
+  <div id="fuelLine" class="hiddenFuel">Fuel <span id="liveFuel">0</span>%
+    <div class="fuelWrap"><div id="fuelBar" class="fuelBar"></div></div></div>
+  Steer: <span id="liveSteer">Neutral</span>
+  <div class="steerWrap"><div id="steerDot" class="steerDot"></div></div>
+  Status: <span id="liveStatus">Ready</span>
+  <div id="comboLine" class="combo">📦 Combo x<span id="comboMult">1</span></div>
+</div>
+
+<div id="panel" class="panel">
+  <h1>Paper Plane Odyssey <span style="color:var(--stampred)">V10</span></h1>
+  <div class="sub">Workshop rebuild. Fixed-timestep physics, balloon bounces, crate combos, no more flight timer.</div>
+  <div class="stats">
+    <div class="stat">Money: $<b id="money">0</b></div>
+    <div class="stat">Best: <b id="best">0</b> mi</div>
+    <div class="stat">Last: <b id="last">0</b> mi</div>
+    <div class="stat">Installs ready: <b id="installs">1</b></div>
+  </div>
+  <div class="stage">Aircraft: <span id="stageName">Paper Plane</span> · Top speed: <span id="topSpeed">190</span> mph<br><span id="nextHint" style="font-weight:600">Next part soon.</span></div>
+
+  <label>Launch Angle: <span id="angleText">35</span>°</label>
+  <input id="angle" type="range" min="10" max="65" value="35">
+  <button id="launch" class="bigbtn">LAUNCH</button>
+
+  <div class="tabs">
+    <button class="tab active" data-shop="mikey">🔧 Mikey's Workshop</button>
+    <button class="tab" data-shop="sophie">🪽 Sophie's Wing Shop</button>
+    <button class="tab" data-shop="nico">🛠 Nico's Airframe</button>
+    <button class="tab" data-shop="mateoGary">⚙ Mateo &amp; Gary Engines</button>
+  </div>
+  <div id="shop"></div>
+
+  <div class="box">
+    <b>Controls:</b> Launch, then drag up/down anywhere to steer the nose (or W/S, arrow keys). Hold the red button or Space to boost once you own an engine.
+    <br><br><b>New:</b> chain money crates within 4 seconds to build a combo multiplier. Bump hot air balloons for cash and an upward kick.
+  </div>
+  <div class="box"><b>Passport:</b><div id="passport">🌴 Miami ✓</div></div>
+  <div class="box"><b>Hangar:</b><div id="hangar" class="hangar"></div></div>
+  <div class="box" style="border-color:#7c3aed;background:rgba(124,58,237,.08)">
+    <b>Legacy:</b> <span id="legacyStars">0</span>⭐ (+<span id="legacyPct">0</span>% earnings forever) · Lifetime best: <span id="bestEver">0</span> mi
+    <button id="prestige" class="bigbtn" style="background:#7c3aed;box-shadow:0 4px 0 #4c1d95;font-size:15px;margin-top:8px">RETIRE &amp; EARN STARS</button>
+  </div>
+  <div class="rowbtns">
+    <button id="soundBtn" class="smallbtn soundbtn">🔊 Sound: On</button>
+    <button id="reset" class="smallbtn resetbtn">Reset Save</button>
+  </div>
+</div>
+
+<div id="tower" class="tower"><div class="t">🗼 JORGE'S CONTROL TOWER</div><div id="towerMsg" class="m">Cleared for takeoff.</div></div>
+<div id="msg" class="msg"></div>
+<div id="stamp" class="stamp"></div>
+<button id="boostBtn" class="boostBtn">🚀</button>
+<div id="workbench" class="workbench">🔧 Installing...</div>
+
+<div id="tutorial" class="modal"><h2 id="tutorialTitle">Tutorial</h2><p id="tutorialText"></p><button id="tutorialBtn" class="bigbtn">Got it</button></div>
+<div id="confirmReset" class="modal"><h2>Reset save?</h2><p>This wipes your money, upgrades, passport, and hangar. There's no undo.</p>
+  <div class="rowbtns"><button id="confirmYes" class="smallbtn resetbtn" style="padding:12px">Yes, wipe it</button><button id="confirmNo" class="smallbtn soundbtn" style="padding:12px">Cancel</button></div></div>
+<div id="confirmPrestige" class="modal"><h2>Retire this aircraft?</h2><p id="prestigeText"></p>
+  <div class="rowbtns"><button id="prestigeYes" class="smallbtn" style="padding:12px;background:#7c3aed">Retire</button><button id="prestigeNo" class="smallbtn soundbtn" style="padding:12px">Cancel</button></div></div>
+
+<script>
+"use strict";
+/* =========================================================
+   Paper Plane Odyssey V10 — rebuilt from scratch
+   Fixes vs V9: fixed-timestep physics (frame-rate independent),
+   balloons actually render (and bounce you), pickups only rebuilt
+   on launch, no hard flight timer, queued notifications, reset
+   confirmation, single input path, cached DOM updates.
+   ========================================================= */
+
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight}
+resize();addEventListener("resize",resize);
+const $=id=>document.getElementById(id);
+const ui={panel:$("panel"),hud:$("hud"),money:$("money"),best:$("best"),last:$("last"),installs:$("installs"),
+stageName:$("stageName"),nextHint:$("nextHint"),angle:$("angle"),angleText:$("angleText"),launch:$("launch"),
+shop:$("shop"),passport:$("passport"),hangar:$("hangar"),msg:$("msg"),stamp:$("stamp"),tower:$("tower"),
+towerMsg:$("towerMsg"),workbench:$("workbench"),boostBtn:$("boostBtn"),tutorial:$("tutorial"),
+tutorialTitle:$("tutorialTitle"),tutorialText:$("tutorialText"),tutorialBtn:$("tutorialBtn"),
+liveDist:$("liveDist"),liveAlt:$("liveAlt"),fuelLine:$("fuelLine"),liveFuel:$("liveFuel"),fuelBar:$("fuelBar"),
+liveSteer:$("liveSteer"),steerDot:$("steerDot"),liveStatus:$("liveStatus"),reset:$("reset"),
+confirmReset:$("confirmReset"),confirmYes:$("confirmYes"),confirmNo:$("confirmNo"),soundBtn:$("soundBtn"),
+comboLine:$("comboLine"),comboMult:$("comboMult"),speedo:$("speedo"),
+legacyStars:$("legacyStars"),legacyPct:$("legacyPct"),bestEver:$("bestEver"),prestige:$("prestige"),
+confirmPrestige:$("confirmPrestige"),prestigeText:$("prestigeText"),prestigeYes:$("prestigeYes"),prestigeNo:$("prestigeNo")};
+
+/* ---------------- Shops & content ---------------- */
+const shops={
+mikey:{title:"🔧 Mikey's Workshop",tag:"Launch systems, slingshots, ramps, catapults.",color:"#1d4ed8",key:"launcher",levels:[
+["Better Throw",35,"More launch speed. You feel this immediately."],
+["Running Start",80,"Longer takeoff push."],
+["Backyard Slingshot",165,"Big leap in starting speed."],
+["Giant Slingshot",360,"Launches harder and flatter."],
+["Garage Catapult",850,"Major launch tier."],
+["Pneumatic Launcher",2100,"Serious runway energy."],
+["Magnetic Rail",5600,"Endgame launch system."]]},
+sophie:{title:"🪽 Sophie's Glamorous Wing Shop",tag:"Wings, lift, glide, and graceful nonsense.",color:"#be185d",key:"wings",levels:[
+["Glossy Paper Wings",40,"Stays in air longer."],
+["Wide Fold Wings",95,"Better glide, less nose dive."],
+["Popsicle Wing Braces",210,"Visible wooden wing supports."],
+["Foam Glider Wings",520,"Huge glide upgrade."],
+["Biplane Wings",1300,"Second wing layer; big lift."],
+["Fighter Wings",3400,"Fast, clean air control."],
+["Space Winglets",9000,"Thin-atmosphere stability."]]},
+nico:{title:"🛠 Nico's Airframe Garage",tag:"Bodies, structure, durability, aircraft evolution.",color:"#92400e",key:"airframe",levels:[
+["Tape Reinforcement",45,"Stronger frame, better stability."],
+["Cardboard Nose",110,"More stable launch arc."],
+["Popsicle Spine",250,"Visible structural backbone."],
+["RC Plane Body",650,"The plane starts becoming real."],
+["Biplane Frame",1600,"Transforms the silhouette."],
+["Fighter Frame",4200,"Major aircraft tier."],
+["Experimental Body",11000,"Absurd late-game form."]]},
+mateoGary:{title:"⚙ Mateo & Gary's Engine Depot",tag:"Rubber props, motors, jets, rockets. Loud and chaotic.",color:"#047857",key:"engine",levels:[
+["Rubber Band Propeller",55,"Adds active boost. Hold Space/tap while flying."],
+["Tighter Rubber Band",135,"More boost force."],
+["Toy Electric Motor",330,"Longer powered flight."],
+["Gas Prop Engine",850,"Big distance jump. Unlocks the fuel gauge."],
+["Twin Propellers",2300,"Serious powered tier."],
+["Jet Booster",6200,"Fast burn, huge thrust."],
+["Rocket Engine",16000,"Space attempt begins."]]}
+};
+const vehicleStages=["Paper Plane","Reinforced Paper","Popsicle Glider","Rubber-Band Flyer","RC Plane","Biplane","WWII Fighter","Stunt Plane","Homemade Jet","Experimental Aircraft","Rocket Plane"];
+const landmarks=[
+{name:"Miami",mi:0,icon:"🌴",bonus:0},{name:"Fort Lauderdale",mi:40,icon:"🏙️",bonus:70},
+{name:"West Palm Beach",mi:110,icon:"🌊",bonus:150},{name:"Orlando Theme Parks",mi:360,icon:"🎢",bonus:420},
+{name:"Atlanta Skyline",mi:1050,icon:"🏙️",bonus:1200},{name:"New York / Statue of Liberty",mi:2400,icon:"🗽",bonus:3000},
+{name:"Hollywood Sign",mi:5600,icon:"🎬",bonus:6500},{name:"London / Big Ben",mi:12000,icon:"🕰️",bonus:15000},
+{name:"Egypt / Pyramids",mi:25000,icon:"🔺",bonus:50000},{name:"Tokyo Tower",mi:44000,icon:"🗼",bonus:100000},
+{name:"Moon",mi:238900,icon:"🌕",bonus:1000000}];
+
+/* ---------------- State & save ---------------- */
+let state={money:0,best:0,last:0,bestAlt:0,bestEver:0,legacyStars:0,prestiges:0,flying:false,shop:"mikey",
+cameraX:-120,cameraY:-220,zoom:1,
+installSlots:1,flights:0,sound:true,up:{launcher:0,wings:0,airframe:0,engine:0},
+passport:["Miami"],hangar:["Paper Plane"],tutorial:{boost:false,crate:false,star:false,balloon:false}};
+let p={x:0,y:-55,vx:0,vy:0,rot:0,fuel:0,maxFuel:0,time:0,stall:0,slow:0,status:"Ready",starBoost:0};
+let boostHeld=false,spin=0,steerTarget=0,steerCurrent=0,touchStartY=null,touchActive=false;
+let combo={count:0,timer:0};
+
+const saveKey="paperPlaneOdysseyV10";
+// Safe storage: persists in a normal browser; degrades silently where localStorage is blocked (e.g. sandboxed previews).
+const store={
+  get(){try{return JSON.parse(localStorage.getItem(saveKey))}catch(e){return null}},
+  set(v){try{localStorage.setItem(saveKey,JSON.stringify(v))}catch(e){}},
+  clear(){try{localStorage.removeItem(saveKey)}catch(e){}}
+};
+function save(){store.set({money:state.money,best:state.best,last:state.last,bestAlt:state.bestAlt,
+  bestEver:state.bestEver,legacyStars:state.legacyStars,prestiges:state.prestiges,
+  installSlots:state.installSlots,flights:state.flights,sound:state.sound,up:state.up,
+  passport:state.passport,hangar:state.hangar,tutorial:state.tutorial})}
+function load(){const s=store.get();if(!s)return;
+  Object.assign(state,{money:s.money??0,best:s.best??0,last:s.last??0,bestAlt:s.bestAlt??0,
+  bestEver:s.bestEver??0,legacyStars:s.legacyStars??0,prestiges:s.prestiges??0,
+  installSlots:s.installSlots??1,flights:s.flights??0,sound:s.sound??true,
+  passport:s.passport??["Miami"],hangar:s.hangar??["Paper Plane"]});
+  state.up={...state.up,...(s.up||{})};state.tutorial={...state.tutorial,...(s.tutorial||{})};
+  state.bestEver=Math.max(state.bestEver,state.best)}
+load();
+
+/* ---------------- Tiny synth (no assets) ---------------- */
+let audioCtx=null;
+function beep(freq,dur,type,vol){
+  if(!state.sound)return;
+  try{
+    if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type=type||"triangle";o.frequency.value=freq;
+    g.gain.setValueAtTime(vol||.12,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+(dur||.15));
+    o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+(dur||.15));
+  }catch(e){}
+}
+const sfx={
+  launch(){beep(180,.35,"sawtooth",.1);beep(300,.25,"triangle",.08)},
+  crate(n){beep(500+Math.min(5,n)*90,.12,"triangle",.14)},
+  star(){beep(880,.2,"sine",.14);setTimeout(()=>beep(1175,.25,"sine",.12),90)},
+  balloon(){beep(260,.18,"square",.1)},
+  land(){beep(160,.3,"sine",.12)},
+  buy(){beep(420,.1,"triangle",.12);setTimeout(()=>beep(620,.12,"triangle",.1),70)},
+  stamp(){beep(220,.12,"square",.1)}
+};
+
+/* ---------------- World objects ---------------- */
+const worldPxPerMi=5.2,altPxPerFt=.014;
+const clouds=Array.from({length:70},()=>({x:Math.random()*26000,y:180+Math.random()*1300,s:.6+Math.random()*1.8}));
+const birds=Array.from({length:40},()=>({x:400+Math.random()*12000,y:120+Math.random()*650,s:.6+Math.random()*1.2}));
+const satellites=Array.from({length:24},()=>({x:2500+Math.random()*34000,y:3500+Math.random()*5000,s:.7+Math.random()*1.1}));
+const crates=[],stars=[],balloons=[];
+function buildPickups(){
+  crates.length=0;stars.length=0;balloons.length=0;
+  for(let mi=210;mi<50000;mi+=170+Math.random()*120){
+    const alt=260+Math.random()*1300+(mi>1000?Math.random()*1400:0);
+    crates.push({x:mi*worldPxPerMi,y:alt,hit:false});
+  }
+  for(let mi=900;mi<60000;mi+=650+Math.random()*550){
+    const alt=6500+Math.random()*26000+(mi>6000?Math.random()*50000:0);
+    stars.push({x:mi*worldPxPerMi,y:alt,hit:false});
+  }
+  for(let mi=120;mi<20000;mi+=380+Math.random()*320){
+    const alt=350+Math.random()*2400;
+    balloons.push({x:mi*worldPxPerMi,y:alt,s:.8+Math.random()*.6,hit:false,bob:Math.random()*6.28});
+  }
+}
+buildPickups();
+
+/* ---------------- Helpers ---------------- */
+function distMi(){return Math.max(0,p.x/worldPxPerMi)}
+function altFt(){return Math.max(0,-p.y/altPxPerFt)}
+function currentVehicleIndex(){return Math.min(vehicleStages.length-1,Math.floor((state.up.airframe+state.up.wings+state.up.engine)/2.2))}
+function vehicleName(){return vehicleStages[currentVehicleIndex()]}
+function levelCost(shopId){const sh=shops[shopId],lvl=state.up[sh.key];return lvl>=sh.levels.length?Infinity:sh.levels[lvl][1]}
+function payoutMult(){return (1+Math.floor(state.best/500)*.03)*(1+state.legacyStars*.10)}
+/* Top speed: engines raise it most, launcher & airframe help. speed*40 = mph on the gauge. */
+function capSpeed(){return 4.8+state.up.launcher*1.0+state.up.engine*1.3+state.up.airframe*.3}
+function starsFor(mi){return Math.floor(Math.sqrt(Math.max(0,mi)/200))}
+function prestigeGain(){return Math.max(0,starsFor(state.bestEver)-state.legacyStars)}
+function layer(a){if(a<12000)return"Low Altitude";if(a<45000)return"Cloud Layer";if(a<85000)return"Jet Stream";if(a<180000)return"Upper Atmosphere";if(a<360000)return"Edge of Space";return"Orbit"}
+
+/* ---------------- Queued notifications (no more clobbered timeouts) ---------------- */
+function makeQueue(el,cls,showMs,gapMs,onShow){
+  const q=[];let busy=false;
+  function next(){
+    if(!q.length){busy=false;return}
+    busy=true;const item=q.shift();
+    if(onShow)onShow(item);else el.innerHTML=item;
+    el.classList.add(cls);
+    setTimeout(()=>{el.classList.remove(cls);setTimeout(next,gapMs)},item.time||showMs);
+  }
+  return t=>{q.push(t);if(!busy)next()};
+}
+const msg=makeQueue(ui.msg,"show",1700,180);
+const stampQ=makeQueue(ui.stamp,"show",1500,160);
+function stamp(t){sfx.stamp();stampQ(t)}
+let towerTimer=null;
+function towerMessage(text,time){
+  ui.towerMsg.textContent=text;ui.tower.style.display="block";
+  clearTimeout(towerTimer);towerTimer=setTimeout(()=>ui.tower.style.display="none",time||1900);
+}
+function workbench(t){ui.workbench.textContent=t;ui.workbench.classList.add("show");
+  setTimeout(()=>ui.workbench.classList.remove("show"),1000)}
+
+/* ---------------- Tutorials ---------------- */
+let tutorialPaused=false;
+function showTutorial(kind,title,text){
+  if(state.tutorial[kind])return;
+  state.tutorial[kind]=true;tutorialPaused=true;boostHeld=false;
+  ui.tutorialTitle.textContent=title;ui.tutorialText.textContent=text;
+  ui.tutorial.classList.add("show");save();
+}
+ui.tutorialBtn.onclick=()=>{tutorialPaused=false;ui.tutorial.classList.remove("show");lastT=performance.now()};
+
+/* ---------------- Shop ---------------- */
+function nearestHint(){
+  if(state.installSlots<=0)return"Launch again to install another part";
+  let best=null;
+  for(const id in shops){const c=levelCost(id);if(c===Infinity)continue;
+    const miss=Math.max(0,c-state.money);if(!best||miss<best.miss)best={id,miss}}
+  if(!best)return"All current parts maxed";
+  return best.miss>0?`Closest part: ${shops[best.id].title.replace(/^\S+\s/,"")} — $${Math.ceil(best.miss)} away`:"A new part is affordable now"
+}
+function buy(shopId){
+  if(state.flying)return;
+  if(state.installSlots<=0){msg("Launch again before installing another part.");return}
+  const sh=shops[shopId],lvl=state.up[sh.key];
+  if(lvl>=sh.levels.length){msg("This shop is maxed for now.");return}
+  const [name,cost]=sh.levels[lvl];
+  if(state.money<cost){msg("Not enough money.");return}
+  state.money-=cost;state.installSlots--;state.up[sh.key]++;
+  sfx.buy();workbench(`${sh.title}: installing ${name}`);
+  const v=vehicleName();
+  if(!state.hangar.includes(v)){state.hangar.push(v);stamp("NEW AIRCRAFT<br>"+v)}
+  save();renderShop();updateStatic();
+}
+function renderShop(){
+  const sh=shops[state.shop],lvl=state.up[sh.key],max=lvl>=sh.levels.length;
+  ui.shop.innerHTML=`<div class="shopTitle" style="background:${sh.color}">${sh.title}<small>${sh.tag}</small></div>`;
+  const btn=document.createElement("button");btn.className="upgrade";
+  if(max){btn.disabled=true;btn.innerHTML=`<div>${sh.title}<small>All current parts installed.</small></div><div class="price">MAX</div>`}
+  else{const part=sh.levels[lvl];
+    btn.disabled=state.flying||state.installSlots<=0||state.money<part[1];
+    btn.innerHTML=`<div>Lv.${lvl+1}: ${part[0]}<small>${part[2]}</small></div><div class="price">$${part[1]}</div>`;
+    btn.onclick=()=>buy(state.shop)}
+  ui.shop.appendChild(btn);
+}
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{
+  state.shop=b.dataset.shop;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));
+  renderShop()});
+
+/* ---------------- Reset with confirmation, sound toggle ---------------- */
+ui.reset.onclick=()=>ui.confirmReset.classList.add("show");
+ui.confirmNo.onclick=()=>ui.confirmReset.classList.remove("show");
+ui.confirmYes.onclick=()=>{store.clear();location.reload()};
+ui.soundBtn.onclick=()=>{state.sound=!state.sound;ui.soundBtn.textContent=state.sound?"🔊 Sound: On":"🔇 Sound: Off";save()};
+ui.soundBtn.textContent=state.sound?"🔊 Sound: On":"🔇 Sound: Off";
+ui.angle.oninput=updateStatic;
+
+/* ---------------- Prestige ---------------- */
+ui.prestige.onclick=()=>{
+  if(state.flying)return;
+  const gain=prestigeGain();
+  if(gain<1){
+    const need=Math.ceil(Math.pow(state.legacyStars+1,2)*200);
+    msg(`Push your lifetime best past ${need} mi to earn the next star.`);return}
+  ui.prestigeText.innerHTML=`You'll gain <b>${gain} Legacy Star${gain>1?"s":""}</b> (+${gain*10}% earnings, permanent).<br><br>This resets your money, installed parts, and passport. Your hangar collection and lifetime best stay.`;
+  ui.confirmPrestige.classList.add("show");
+};
+ui.prestigeNo.onclick=()=>ui.confirmPrestige.classList.remove("show");
+ui.prestigeYes.onclick=()=>{
+  ui.confirmPrestige.classList.remove("show");
+  const gain=prestigeGain();
+  state.legacyStars+=gain;state.prestiges++;
+  state.money=0;state.best=0;state.last=0;state.installSlots=1;
+  state.up={launcher:0,wings:0,airframe:0,engine:0};
+  state.passport=["Miami"];
+  sfx.star();
+  stamp(`🏆<br>RETIRED<br>+${gain} Legacy Star${gain>1?"s":""}`);
+  towerMessage("Jorge's Control Tower: legend status confirmed. Back to the drawing board.",2400);
+  save();renderShop();updateStatic();
+};
+
+/* ---------------- Input: single pointer path + keys ---------------- */
+addEventListener("keydown",e=>{
+  if(e.code==="Space"){boostHeld=true;e.preventDefault()}
+  if(e.code==="ArrowUp"||e.code==="KeyW"){steerTarget=-1;e.preventDefault()}
+  if(e.code==="ArrowDown"||e.code==="KeyS"){steerTarget=1;e.preventDefault()}
+});
+addEventListener("keyup",e=>{
+  if(e.code==="Space")boostHeld=false;
+  if(["ArrowUp","KeyW","ArrowDown","KeyS"].includes(e.code))steerTarget=0;
+});
+function setTouchSteer(y){
+  if(!state.flying||touchStartY===null)return;
+  steerTarget=Math.max(-1,Math.min(1,(y-touchStartY)/48));
+}
+canvas.addEventListener("pointerdown",e=>{e.preventDefault();touchActive=true;touchStartY=e.clientY;steerTarget=0;
+  try{canvas.setPointerCapture(e.pointerId)}catch(err){}},{passive:false});
+canvas.addEventListener("pointermove",e=>{e.preventDefault();if(touchActive)setTouchSteer(e.clientY)},{passive:false});
+function clearTouch(e){e.preventDefault();touchActive=false;touchStartY=null;steerTarget=0;
+  try{canvas.releasePointerCapture(e.pointerId)}catch(err){}}
+canvas.addEventListener("pointerup",clearTouch,{passive:false});
+canvas.addEventListener("pointercancel",clearTouch,{passive:false});
+["pointerdown","touchstart"].forEach(ev=>ui.boostBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();boostHeld=true},{passive:false}));
+["pointerup","pointercancel","touchend"].forEach(ev=>ui.boostBtn.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();boostHeld=false},{passive:false}));
+
+/* ---------------- Launch / end flight ---------------- */
+ui.launch.onclick=()=>{
+  if(state.flying)return;
+  const a=Number(ui.angle.value)*Math.PI/180;
+  const speed=4.2+state.up.launcher*.92+state.up.airframe*.16;
+  buildPickups();
+  p.x=0;p.y=-55;p.vx=Math.cos(a)*speed;p.vy=-Math.sin(a)*speed;p.rot=-a;
+  p.maxFuel=state.up.engine?70+state.up.engine*65:0;p.fuel=p.maxFuel;
+  p.time=0;p.stall=0;p.slow=0;p.starBoost=0;p.status="Launch";
+  steerTarget=0;steerCurrent=0;combo={count:0,timer:0};
+  state.flying=true;state.cameraX=-120;state.cameraY=-240;state.zoom=1;
+  sfx.launch();
+  towerMessage("Jorge's Control Tower... you are cleared for takeoff.",2200);
+  setTimeout(()=>towerMessage("3... 2... 1... LAUNCH!",1200),850);
+  msg("Launch from Miami!");
+  if(state.up.engine>0)showTutorial("boost","Red Boost Button","You have an engine installed. Drag to steer; hold the red button (or Space) to fire your boost.");
+  updateStatic();
+};
+function endFlight(reason){
+  state.flying=false;boostHeld=false;steerTarget=0;steerCurrent=0;touchStartY=null;touchActive=false;
+  const d=distMi(),a=altFt();
+  state.last=d;const oldBest=state.best;
+  state.best=Math.max(state.best,d);state.bestEver=Math.max(state.bestEver,d);
+  state.bestAlt=Math.max(state.bestAlt,a);state.flights++;
+  const earned=Math.max(10,Math.floor((d*.82+Math.sqrt(a)*.06+10)*payoutMult()));
+  state.money+=earned;state.installSlots=1;
+  const record=d>oldBest*1.15&&d>80;
+  sfx.land();
+  msg(`${reason}: ${Math.floor(d)} mi — Earned $${earned}${record?" — New record!":""}`);
+  save();renderShop();updateStatic();
+}
+
+/* ---------------- Pickups & landmarks ---------------- */
+function checkLandmarks(){
+  const d=distMi();
+  for(const l of landmarks){
+    if(d>=l.mi&&!state.passport.includes(l.name)){
+      state.passport.push(l.name);
+      const b=Math.floor(l.bonus*payoutMult());state.money+=b;
+      towerMessage("Jorge's Control Tower: radar shows you approaching "+l.name+".",1800);
+      stamp(`${l.icon}<br>${l.name}<br>+$${b}`);
+      staticDirty=true;
+    }
+  }
+}
+function crateValue(mi,alt){
+  let v=20;
+  if(mi>350)v=45;if(mi>800)v=80;if(mi>2000)v=150;
+  if(alt>6000)v+=35;if(alt>18000)v+=75;if(alt>60000)v+=160;
+  return Math.floor(v*payoutMult());
+}
+function checkPickups(){
+  const px=p.x,py=p.y;
+  for(const c of crates){
+    if(c.hit)continue;
+    if(Math.abs(px-c.x)<42&&Math.abs(py+c.y)<42){
+      c.hit=true;
+      combo.count++;combo.timer=240; // 4s window at 60Hz sim
+      const mult=Math.min(5,combo.count);
+      const val=crateValue(c.x/worldPxPerMi,c.y)*mult;
+      state.money+=val;
+      sfx.crate(mult);
+      stamp(mult>1?`📦 x${mult} COMBO<br>+$${val}`:`📦<br>Money Crate<br>+$${val}`);
+      showTutorial("crate","Money Crates","Fly into hanging crates for bonus cash. Chain them within 4 seconds to build a combo multiplier, up to x5.");
+    }
+  }
+  for(const s of stars){
+    if(s.hit)continue;
+    if(Math.abs(px-s.x)<44&&Math.abs(py+s.y)<44){
+      s.hit=true;p.starBoost=180;
+      sfx.star();
+      stamp(`⭐<br>Star Boost<br>3 seconds!`);
+      showTutorial("star","Star Boosts","Stars give an automatic 3-second boost. You'll find more of them in the higher atmosphere.");
+    }
+  }
+  for(const b of balloons){
+    if(b.hit)continue;
+    if(Math.abs(px-b.x)<40&&Math.abs(py+b.y)<50){
+      b.hit=true;
+      const val=Math.floor(25*payoutMult());
+      state.money+=val;
+      p.vy=Math.min(p.vy,-1.4); // upward kick
+      sfx.balloon();
+      stamp(`🎈<br>Balloon Bounce<br>+$${val}`);
+      showTutorial("balloon","Balloon Bounce","Bumping a hot air balloon pays a little cash and kicks you upward. Chain them low to stay off the ground.");
+    }
+  }
+}
+
+/* ---------------- Physics: fixed 60Hz timestep ---------------- */
+const STEP=1000/60;
+let lastT=performance.now(),acc=0;
+function physicsStep(){
+  const w=state.up.wings,f=state.up.airframe,e=state.up.engine;
+  const alt=altFt(),speed=Math.hypot(p.vx,p.vy),atmo=Math.max(.08,1-alt/270000);
+  let thrust=0;
+  if(p.starBoost>0){p.starBoost--;thrust=(.08+.018*e)*atmo;p.status="STAR BOOST"}
+  else if(p.fuel>0&&boostHeld){
+    const burn=1.6+Math.max(0,e-3)*.45;
+    p.fuel=Math.max(0,p.fuel-burn);
+    thrust=(.055+.022*e)*atmo;p.status="BOOST"
+  }
+  else if(p.fuel>0)p.status="Gliding / boost ready";
+  else p.status="Gliding";
+  // Redline: the engine can't push past your aircraft's top speed.
+  // Grace window: for ~2.5s after launch, the cap doesn't apply — a Magnetic
+  // Rail throw gets its full send before physics reins you in.
+  const cap=capSpeed();
+  const grace=p.time<150;
+  if(speed>=cap&&!grace)thrust=0;
+
+  const controlPower=Math.min(.095,.028+.0075*w+.0055*f);
+  const controlSmoothing=Math.min(.28,.12+.018*w+.012*f);
+  steerCurrent+=(steerTarget-steerCurrent)*controlSmoothing;
+  const pitchForce=steerCurrent*controlPower;
+  const liftSpeedFactor=Math.min(1,speed/3.2);
+  const baseLift=(.0035*f+.020*w)*atmo*liftSpeedFactor;
+  const steeringLift=(-pitchForce)*atmo*liftSpeedFactor;
+  const gravity=.076+Math.max(0,alt-90000)/1100000;
+  let drag=.9895+Math.min(.009,w*.0011)-Math.max(0,f-4)*.00025;
+  drag-=Math.abs(steerCurrent)*.0016;
+  // Streamlining: the faster you're moving, the better you hold momentum.
+  // This is what makes releasing boost feel like coasting instead of braking.
+  drag=Math.min(.9988,drag+Math.min(.007,Math.max(0,speed-3)*.0009));
+  const wind=Math.sin((p.time+137)*.011)*.0032*(1+w*.03);
+
+  p.vx+=thrust+wind;
+  p.vy+=gravity-baseLift+pitchForce-steeringLift;
+  if(steerCurrent<-.45&&speed<2.2){p.vx*=.986;p.vy+=.018}
+  if(steerCurrent>.45){p.vx+=.006*steerCurrent;p.vy+=.006*steerCurrent}
+  p.vx*=drag;p.vy*=.996;
+  // Over redline: heavy air resistance pulls you back to the cap —
+  // unless you're still inside the launch grace window.
+  const sp2=Math.hypot(p.vx,p.vy);
+  if(sp2>cap){
+    if(grace){p.status="LAUNCH SPEED"}
+    else{
+      const k=1-Math.min(.05,(sp2/cap-1)*.4);
+      p.vx*=k;p.vy*=k;
+      p.status="REDLINE";
+    }
+  }
+
+  if(speed<1.0&&p.fuel<=0){p.stall++;p.status="STALL";p.vy+=.22+.025*Math.min(24,p.stall);p.vx*=.965;p.rot+=.10}
+  else p.stall=Math.max(0,p.stall-2);
+  if(speed<.2)p.slow++;else p.slow=0;
+
+  p.x+=p.vx;p.y+=p.vy;p.time++;
+  p.rot=Math.atan2(p.vy,p.vx)+steerCurrent*.45;
+  spin+=.2+e*.16;
+  if(combo.timer>0){combo.timer--;if(combo.timer===0)combo.count=0}
+
+  checkLandmarks();checkPickups();
+
+  const targetZoom=Math.max(.38,Math.min(1,1.06-speed*.03-alt/320000));
+  state.zoom+=(targetZoom-state.zoom)*.04;
+  state.cameraX+=(p.x-canvas.width/(2*state.zoom)-state.cameraX)*.07;
+  state.cameraY+=(p.y-canvas.height/(2*state.zoom)-state.cameraY)*.07;
+
+  if(p.y>=0){p.y=0;towerMessage("Nice landing. We'll get farther next time.",1800);endFlight("Landed")}
+  else if(p.slow>240)endFlight("Stalled out");
+  // No arbitrary time cap — flights end when physics says so.
+}
+
+/* ---------------- UI updates (cached, not every frame) ---------------- */
+let staticDirty=true;
+function updateStatic(){staticDirty=true}
+function renderStatic(){
+  staticDirty=false;
+  ui.money.textContent=Math.floor(state.money);
+  ui.best.textContent=Math.floor(state.best);
+  ui.last.textContent=Math.floor(state.last);
+  ui.installs.textContent=state.installSlots;
+  ui.stageName.textContent=vehicleName();
+  document.getElementById("topSpeed").textContent=Math.round(capSpeed()*40);
+  ui.nextHint.textContent=nearestHint();
+  ui.angleText.textContent=ui.angle.value;
+  ui.passport.innerHTML=state.passport.map(n=>{
+    const l=landmarks.find(x=>x.name===n);return `${l?l.icon:"✓"} ${n} ✓`}).join("<br>");
+  ui.hangar.innerHTML=vehicleStages.map(v=>
+    `<span class="${state.hangar.includes(v)?"got":""}">${state.hangar.includes(v)?"✓":"□"} ${v}</span>`).join("");
+  ui.legacyStars.textContent=state.legacyStars;
+  ui.legacyPct.textContent=state.legacyStars*10;
+  ui.bestEver.textContent=Math.floor(state.bestEver);
+  const gain=prestigeGain();
+  ui.prestige.textContent=gain>0?`RETIRE & EARN ${gain} STAR${gain>1?"S":""}`:"RETIRE (fly farther first)";
+  ui.prestige.disabled=state.flying||gain<1;
+  ui.panel.classList.toggle("hidden",state.flying);
+  ui.hud.classList.toggle("show",state.flying);
+  ui.boostBtn.classList.toggle("show",state.flying&&state.up.engine>0);
+  ui.launch.disabled=state.flying;
+  renderShop();
+}
+function renderLive(){
+  ui.liveDist.textContent=Math.floor(distMi());
+  ui.liveAlt.textContent=Math.floor(altFt());
+  ui.liveSteer.textContent=steerCurrent<-.2?"Nose Up":steerCurrent>.2?"Nose Down":"Neutral";
+  ui.steerDot.style.left=(50+steerCurrent*45)+"%";
+  ui.money.textContent=Math.floor(state.money);
+  const fuelPct=p.maxFuel?Math.max(0,Math.floor(100*p.fuel/p.maxFuel)):0;
+  const hasGauge=state.up.engine>=4;
+  ui.fuelLine.classList.toggle("hiddenFuel",!hasGauge);
+  ui.liveFuel.textContent=fuelPct;ui.fuelBar.style.width=fuelPct+"%";
+  ui.liveStatus.textContent=p.status+" / "+layer(altFt());
+  const showCombo=combo.count>1&&combo.timer>0;
+  ui.comboLine.classList.toggle("show",showCombo);
+  if(showCombo)ui.comboMult.textContent=Math.min(5,combo.count);
+  drawSpeedo();
+}
+/* Half-circle speedometer with needle, zones, and mph readout */
+let speedoSmooth=0;
+function drawSpeedo(){
+  const c=ui.speedo,g=c.getContext("2d");
+  const W=c.width,H=c.height,cx=W/2,cy=H-12,R=64;
+  g.clearRect(0,0,W,H);
+  const mph=Math.hypot(p.vx,p.vy)*40;
+  speedoSmooth+=(mph-speedoSmooth)*.18; // needle inertia
+  const capMph=capSpeed()*40;
+  const maxMph=Math.max(200,Math.ceil(capMph/50)*50); // gauge grows with your engine
+  const frac=Math.min(1,speedoSmooth/maxMph);
+  const redStart=Math.max(.6,(capMph*.92)/maxMph); // redline zone ends at your cap
+  const a0=Math.PI;
+  g.lineWidth=10;g.lineCap="round";
+  const zone=(f0,f1,col)=>{g.strokeStyle=col;g.beginPath();g.arc(cx,cy,R,a0+Math.PI*f0,a0+Math.PI*f1);g.stroke()};
+  zone(0,redStart*.75,"rgba(34,197,94,.85)");
+  zone(redStart*.75,redStart,"rgba(250,204,21,.85)");
+  zone(redStart,1,"rgba(239,68,68,.9)");
+  g.strokeStyle="rgba(255,255,255,.55)";g.lineWidth=2;
+  for(let i=0;i<=6;i++){const a=a0+Math.PI*i/6;
+    g.beginPath();g.moveTo(cx+Math.cos(a)*(R+8),cy+Math.sin(a)*(R+8));
+    g.lineTo(cx+Math.cos(a)*(R+3),cy+Math.sin(a)*(R+3));g.stroke()}
+  const na=a0+Math.PI*frac;
+  g.strokeStyle="#fff";g.lineWidth=3;
+  g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+Math.cos(na)*(R-8),cy+Math.sin(na)*(R-8));g.stroke();
+  g.fillStyle="#fff";g.beginPath();g.arc(cx,cy,5,0,7);g.fill();
+  g.font="900 16px Nunito, Arial";g.textAlign="center";
+  g.fillStyle=speedoSmooth>=capMph*.92?"#f87171":"#fff";
+  g.fillText(Math.round(speedoSmooth)+" mph",cx,cy-18);
+  g.font="700 10px Nunito, Arial";g.fillStyle="rgba(255,255,255,.6)";
+  g.fillText("0",cx-R-2,cy+2);g.fillText(maxMph+"",cx+R+2,cy+2);
+}
+
+/* ---------------- Rendering ---------------- */
+function sky(){
+  const a=altFt();let top="#87ceeb",bot="#eaf7ff";
+  if(a>25000){top="#6bbbea";bot="#dff4ff"}
+  if(a>75000){top="#3d8bd4";bot="#bddfff"}
+  if(a>140000){top="#1555a3";bot="#7fb8ee"}
+  if(a>230000){top="#061b52";bot="#2f6ebd"}
+  if(a>380000){top="#020617";bot="#061b52"}
+  const g=ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0,top);g.addColorStop(1,bot);
+  ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(a>300000){const fade=Math.min(1,(a-300000)/140000);ctx.fillStyle="white";
+    for(let i=0;i<130;i++){ctx.globalAlpha=(.12+((i*17)%60)/120)*fade;
+      ctx.fillRect((i*191+37)%canvas.width,(i*89+73)%canvas.height,1+(i%3),1+(i%3))}
+    ctx.globalAlpha=1}
+  if(a>260000){const fade=Math.min(1,(a-260000)/140000);
+    ctx.beginPath();ctx.ellipse(canvas.width/2,canvas.height+230*state.zoom,canvas.width*.75,190*state.zoom,0,Math.PI,Math.PI*2);
+    ctx.fillStyle=`rgba(59,130,246,${.18*fade})`;ctx.fill();
+    ctx.strokeStyle=`rgba(255,255,255,${.28*fade})`;ctx.lineWidth=3;ctx.stroke()}
+}
+function wx(x){return(x-state.cameraX)*state.zoom}
+function wy(y){return(y-state.cameraY)*state.zoom}
+function onScreen(x,y,m){return x>-m&&x<canvas.width+m&&y>-m&&y<canvas.height+m}
+function cloud(o){const x=wx(o.x),y=wy(-o.y);if(!onScreen(x,y,180))return;
+  ctx.save();ctx.translate(x,y);ctx.scale(o.s*state.zoom,o.s*state.zoom);
+  ctx.beginPath();ctx.arc(0,15,20,0,7);ctx.arc(28,8,28,0,7);ctx.arc(62,18,23,0,7);ctx.arc(32,30,28,0,7);
+  ctx.fillStyle="rgba(255,255,255,.78)";ctx.fill();ctx.restore()}
+function bird(o){const x=wx(o.x),y=wy(-o.y);if(!onScreen(x,y,60))return;
+  ctx.save();ctx.translate(x,y);ctx.scale(o.s*state.zoom,o.s*state.zoom);
+  ctx.strokeStyle="#111827";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-10,0);ctx.quadraticCurveTo(0,-8,10,0);ctx.moveTo(10,0);ctx.quadraticCurveTo(20,-8,30,0);ctx.stroke();ctx.restore()}
+function balloonDraw(o){if(o.hit)return;const bobY=Math.sin(o.bob+p.time*.02)*8;
+  const x=wx(o.x),y=wy(-(o.y+bobY));if(!onScreen(x,y,100))return;
+  ctx.save();ctx.translate(x,y);ctx.scale(o.s*state.zoom,o.s*state.zoom);
+  ctx.beginPath();ctx.ellipse(0,0,18,24,0,0,7);ctx.fillStyle="#ef4444";ctx.fill();
+  ctx.strokeStyle="#7f1d1d";ctx.lineWidth=2;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-8,20);ctx.lineTo(-6,42);ctx.moveTo(8,20);ctx.lineTo(6,42);ctx.stroke();
+  ctx.fillStyle="#92400e";ctx.fillRect(-9,42,18,12);ctx.strokeRect(-9,42,18,12);
+  ctx.restore()}
+function satellite(o){const x=wx(o.x),y=wy(-o.y);if(!onScreen(x,y,100))return;
+  ctx.save();ctx.translate(x,y);ctx.rotate(.25);ctx.scale(o.s*state.zoom,o.s*state.zoom);
+  ctx.fillStyle="#e5e7eb";ctx.fillRect(-12,-8,24,16);ctx.strokeRect(-12,-8,24,16);
+  ctx.fillStyle="#60a5fa";ctx.fillRect(-48,-10,28,20);ctx.fillRect(20,-10,28,20);
+  ctx.strokeRect(-48,-10,28,20);ctx.strokeRect(20,-10,28,20);ctx.restore()}
+function drawCrate(o){if(o.hit)return;const x=wx(o.x),y=wy(-o.y);if(!onScreen(x,y,100))return;
+  ctx.save();ctx.translate(x,y);ctx.scale(state.zoom,state.zoom);
+  ctx.fillStyle="#ef4444";ctx.beginPath();ctx.ellipse(0,-48,14,18,0,0,7);ctx.fill();
+  ctx.strokeStyle="#991b1b";ctx.stroke();
+  ctx.strokeStyle="#64748b";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-30);ctx.lineTo(0,-12);ctx.stroke();
+  ctx.fillStyle="#f59e0b";ctx.fillRect(-17,-12,34,28);
+  ctx.strokeStyle="#78350f";ctx.strokeRect(-17,-12,34,28);
+  ctx.beginPath();ctx.moveTo(-17,-12);ctx.lineTo(17,16);ctx.moveTo(17,-12);ctx.lineTo(-17,16);ctx.stroke();ctx.restore()}
+function drawStar(o){if(o.hit)return;const x=wx(o.x),y=wy(-o.y);if(!onScreen(x,y,100))return;
+  ctx.save();ctx.translate(x,y);ctx.scale(state.zoom,state.zoom);
+  ctx.fillStyle="#fde047";ctx.strokeStyle="#a16207";ctx.lineWidth=2;
+  ctx.beginPath();for(let i=0;i<10;i++){const r=i%2===0?20:8,a=-Math.PI/2+i*Math.PI/5;
+    ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r)}
+  ctx.closePath();ctx.fill();ctx.stroke();ctx.restore()}
+function ground(){
+  const gy=wy(0);
+  ctx.fillStyle="#71b85f";ctx.fillRect(0,gy,canvas.width,canvas.height-gy);
+  ctx.strokeStyle="rgba(0,0,0,.18)";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(canvas.width,gy);ctx.stroke();
+  const sx=wx(0);
+  if(sx>-300&&sx<canvas.width+200){
+    ctx.fillStyle="#f97316";ctx.fillRect(sx-8,gy-80*state.zoom,16*state.zoom,80*state.zoom);
+    ctx.fillStyle="#111827";ctx.font=`${Math.max(12,16*state.zoom)}px Nunito, Arial`;
+    ctx.fillText("MIAMI LAUNCH",sx-55*state.zoom,gy-92*state.zoom)}
+  ctx.fillStyle="rgba(17,24,39,.55)";ctx.font="12px Nunito, Arial";
+  for(let m=100;m<12000;m+=100){
+    const x=wx(m*worldPxPerMi);
+    if(x>-50&&x<canvas.width+50){ctx.fillRect(x,gy-18*state.zoom,2,18*state.zoom);ctx.fillText(m+" mi",x-14,gy-25*state.zoom)}}
+}
+function drawLandmarks(){
+  for(const l of landmarks){
+    if(l.mi===0||l.mi>50000)continue;
+    const x=wx(l.mi*worldPxPerMi),gy=wy(0);
+    if(x<-220||x>canvas.width+220)continue;
+    ctx.save();ctx.translate(x,gy);ctx.scale(state.zoom,state.zoom);
+    ctx.fillStyle="#111827";ctx.font="bold 15px Nunito, Arial";ctx.textAlign="center";
+    ctx.fillText(`${l.icon} ${l.name}`,0,-105);
+    if(l.name.includes("Orlando")){ctx.fillStyle="#fb7185";ctx.fillRect(-55,-80,110,55);
+      ctx.fillStyle="#fde68a";ctx.beginPath();ctx.arc(0,-82,35,Math.PI,Math.PI*2);ctx.fill()}
+    else if(l.name.includes("Statue")){ctx.fillStyle="#5eead4";ctx.fillRect(-10,-90,20,80);
+      ctx.beginPath();ctx.moveTo(0,-125);ctx.lineTo(18,-90);ctx.lineTo(-18,-90);ctx.fill()}
+    else if(l.name.includes("Hollywood")){ctx.fillStyle="#f9fafb";ctx.fillRect(-75,-70,150,30);
+      ctx.fillStyle="#111827";ctx.font="bold 16px Nunito, Arial";ctx.fillText("HOLLYWOOD",0,-49)}
+    else if(l.name.includes("Pyramids")){ctx.fillStyle="#d6a85a";
+      ctx.beginPath();ctx.moveTo(-75,0);ctx.lineTo(-20,-80);ctx.lineTo(35,0);ctx.fill();
+      ctx.beginPath();ctx.moveTo(5,0);ctx.lineTo(65,-62);ctx.lineTo(125,0);ctx.fill()}
+    else{ctx.fillStyle="#64748b";ctx.fillRect(-55,-80,25,80);ctx.fillRect(-20,-55,30,55);ctx.fillRect(20,-70,35,70)}
+    ctx.restore()}
+}
+function aircraft(){
+  const x=wx(p.x),y=wy(p.y),f=currentVehicleIndex(),e=state.up.engine,w=state.up.wings,a=state.up.airframe;
+  ctx.save();ctx.translate(x,y);ctx.rotate(p.rot);ctx.scale(state.zoom,state.zoom);
+  if(boostHeld&&p.fuel>0&&e>0){
+    ctx.beginPath();ctx.moveTo(-40,0);ctx.lineTo(-80-10*e,-8-2*e);ctx.lineTo(-80-10*e,8+2*e);ctx.closePath();
+    ctx.fillStyle=e>=5?"rgba(249,115,22,.85)":"rgba(255,255,255,.65)";ctx.fill()}
+  if(f>=8){
+    ctx.fillStyle=f>=10?"#e5e7eb":"#94a3b8";ctx.fillRect(-35,-13,75,26);
+    ctx.beginPath();ctx.moveTo(48,0);ctx.lineTo(26,-18);ctx.lineTo(26,18);ctx.closePath();ctx.fill();
+    ctx.strokeStyle="#111827";ctx.strokeRect(-35,-13,75,26)}
+  else if(f>=5){
+    ctx.fillStyle="#d1d5db";ctx.beginPath();ctx.moveTo(50,0);ctx.lineTo(8,-13);ctx.lineTo(-50,-11);ctx.lineTo(-65,0);ctx.lineTo(-50,11);ctx.lineTo(8,13);ctx.closePath();ctx.fill();
+    ctx.strokeStyle="#111827";ctx.lineWidth=2.5;ctx.stroke();
+    ctx.fillStyle="#f9fafb";
+    ctx.beginPath();ctx.moveTo(8,-8);ctx.lineTo(-30,-54);ctx.lineTo(-14,-8);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(8,8);ctx.lineTo(-30,54);ctx.lineTo(-14,8);ctx.closePath();ctx.fill();ctx.stroke();
+    if(f===5){ctx.fillRect(-35,-42,70,8);ctx.strokeRect(-35,-42,70,8)}}
+  else{
+    ctx.beginPath();ctx.moveTo(38,0);ctx.lineTo(-34,-18);ctx.lineTo(-10,0);ctx.lineTo(-34,18);ctx.closePath();
+    ctx.fillStyle=a>=1?"#fef3c7":"#fff";ctx.fill();
+    ctx.strokeStyle="#111827";ctx.lineWidth=2.5;ctx.stroke();
+    ctx.strokeStyle="#94a3b8";ctx.beginPath();ctx.moveTo(-10,0);ctx.lineTo(-34,-18);ctx.moveTo(-10,0);ctx.lineTo(-34,18);ctx.stroke();
+    if(w>=3||a>=3){ctx.fillStyle="#d6a15c";ctx.fillRect(-27,-7,54,5);ctx.fillRect(-27,2,54,5);
+      ctx.strokeStyle="#7c4a1e";ctx.strokeRect(-27,-7,54,5);ctx.strokeRect(-27,2,54,5)}}
+  if(w>=1&&f<8){
+    ctx.fillStyle="#ec4899";
+    ctx.beginPath();ctx.moveTo(-32,-16);ctx.lineTo(-55,-34);ctx.lineTo(-42,-9);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-32,16);ctx.lineTo(-55,34);ctx.lineTo(-42,9);ctx.closePath();ctx.fill();ctx.stroke()}
+  if(e>=1&&f<8){
+    ctx.save();ctx.translate(43,0);ctx.rotate(spin);
+    ctx.strokeStyle=e>=3?"#374151":"#8b5a2b";ctx.lineWidth=e>=3?4:3;
+    const len=e>=3?23:17;
+    ctx.beginPath();ctx.moveTo(-len,0);ctx.lineTo(len,0);ctx.moveTo(0,-len);ctx.lineTo(0,len);ctx.stroke();
+    ctx.fillStyle="#111827";ctx.beginPath();ctx.arc(0,0,5,0,7);ctx.fill();ctx.restore()}
+  ctx.restore();
+}
+function idleCamera(){
+  p.x=0;p.y=-55;p.rot=-Number(ui.angle.value)*Math.PI/180;
+  state.cameraX+=(p.x-canvas.width/(2*state.zoom)+120-state.cameraX)*.07;
+  state.cameraY+=(p.y-canvas.height/(2*state.zoom)+40-state.cameraY)*.07;
+}
+function draw(){
+  sky();
+  clouds.forEach(cloud);birds.forEach(bird);satellites.forEach(satellite);
+  balloons.forEach(balloonDraw);
+  crates.forEach(drawCrate);stars.forEach(drawStar);
+  drawLandmarks();ground();
+  if(!state.flying)idleCamera();
+  aircraft();
+}
+
+/* ---------------- Main loop: fixed timestep + render ---------------- */
+function loop(now){
+  const dt=Math.min(120,now-lastT); // clamp to avoid spiral after tab switch
+  lastT=now;
+  if(state.flying&&!tutorialPaused){
+    acc+=dt;
+    while(acc>=STEP){physicsStep();acc-=STEP;if(!state.flying)break}
+  }else acc=0;
+  draw();
+  if(state.flying)renderLive();
+  if(staticDirty)renderStatic();
+  requestAnimationFrame(loop);
+}
+renderStatic();
+requestAnimationFrame(t=>{lastT=t;loop(t)});
+</script>
+</body>
+</html>
