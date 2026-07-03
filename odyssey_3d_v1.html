@@ -306,7 +306,7 @@ const ECON = {
   // Miles of world progress per mph-second of flight (game distance scale).
   mphToMiPerSec: 1/240,
   runOverheadSec: 8,          // launch prep + shop time per run (sim accounting)
-  descentSec: 3,              // avg descent/CALL IT time per run (sim accounting)
+  descentSec: 6,              // avg glide wind-down + CALL IT time per run (sim accounting)
   tracks: {
     engine:{name:"Engine",       base:32,   growth:1.72, max:40, who:"mateoGary"},
     aero:  {name:"Aerodynamics", base:45,   growth:1.73, max:40, who:"mateoGary"},
@@ -347,7 +347,7 @@ const ECON = {
   coinFlat: 22,
   coinAltPow: 1.0,            // altitude income is linear: climbing IS the money
   coinAltRate: 0.02,
-  starLifetimeDiv: 630000,       // legacy stars = floor((lifetime/div)^pow)
+  starLifetimeDiv: 600000,       // legacy stars = floor((lifetime/div)^pow)
   starLifetimePow: 0.5,
 };
 function upCost(track, lvl){
@@ -805,6 +805,7 @@ function stoneArch(){
   g.userData.isArch=true;
   return g;
 }
+stoneArch.propName="arch";
 function iceberg(){
   const m=new THREE.Mesh(new THREE.DodecahedronGeometry(8,0),flatMat(0xe4f2fb));
   m.scale.set(1+Math.random(), .7+Math.random()*.9, 1+Math.random());
@@ -1638,8 +1639,8 @@ let p=null;
 function stats(){return statsFor(state.up,state.stars,state.laps)}
 function resetPlane(){
   p={posMi:state.posMi,alt:15,vy:0,spd:0,fuel:0,time:0,dist:0,peakAlt:15,
-     lat:0,pitch:0,steerX:0,descent:false,fallT:0,pickupCoins:0,stuntCoins:0,
-     reentry:false,landed:false,status:"Ready"};
+     lat:0,pitch:0,steerX:0,descent:false,stalled:false,fallT:0,prevGx:undefined,
+     pickupCoins:0,stuntCoins:0,reentry:false,landed:false,status:"Ready"};
 }
 resetPlane();
 
@@ -1687,8 +1688,18 @@ function physTick(dt){
     p.spd+=(target-p.spd)*Math.min(1,dt*.9);
     p.status=boostHeld?"BOOST":"Powered flight";
   }else{
-    p.spd*=Math.pow(.82,dt);
-    p.status="Gliding";
+    // GLIDE — thrust is gone, but this thing began life as a paper plane.
+    if(!inAtmo)p.stalled=true;        // no air up there to glide on
+    if(p.spd<=30)p.stalled=true;      // too slow: the glide is truly over
+    if(!p.stalled){
+      // nose down trades altitude for speed; pulling up bleeds it off
+      if(p.pitch<-.05)p.spd=Math.min(st.speed*1.35,p.spd+(-p.pitch)*(30+p.spd*.25)*dt);
+      else if(p.pitch>.05)p.spd-=p.pitch*(10+p.spd*.09)*dt;
+      p.spd*=1-.01*dt;                // clean air barely bleeds speed
+      p.status="Gliding";
+    }else{
+      p.spd*=Math.pow(.6,dt);
+    }
   }
 
   // vertical
@@ -1698,6 +1709,14 @@ function physTick(dt){
     if(!inAtmo&&rate<=0){vyT=-30;p.status="NO ROCKET BOOST — thin air"}
     else vyT=p.pitch>0?p.pitch*rate:(p.pitch<-.05?p.pitch*Math.max(260,rate):0);
     if(p.alt<25&&vyT<0)vyT=0; // ground effect while powered
+  }else if(!p.stalled){
+    // glide physics: better aerodynamics = flatter glide
+    const glideRatio=3+Math.min(12,state.up.aero*.3);
+    let sink=p.spd*1.467/glideRatio+4;
+    if(p.pitch<-.05)sink+=(-p.pitch)*(200+p.spd*.8);         // dive
+    else if(p.pitch>.05)sink*=Math.max(.25,1-p.pitch*.75);   // flare: float, bleed speed
+    vyT=-sink;
+    p.fallT=0;
   }else{
     p.fallT+=dt;
     const fm=Math.min(7,1+p.fallT*2.2); // falls get FAST
@@ -1741,13 +1760,27 @@ function physTick(dt){
     p.spd*=1-.02*dt*Math.abs(Math.sin(p.time*.9));
   }
 
-  // near-misses & arch fly-throughs (low-altitude daring)
-  if(p.alt<500&&p.spd>60&&!p.descent){
+  // collisions & near-misses: obstacles are SOLID. Touch one and the flight
+  // is over; thread past one with inches to spare and get paid for the nerve.
+  if(p.alt<500&&!p.descent&&p.time>1.5){
     const gx=p.posMi*UPM;
     const c=chunks.get(Math.floor(gx/CHUNK));
     if(c){
+      const altU=p.alt/6;
       for(const nm of c.nearMiss){
-        if(!nm.hit&&Math.abs(gx-nm.gx)<10&&Math.abs(p.lat-nm.z)<nm.r+4&&p.alt/6<nm.h+10){
+        if(nm.kind==="arch")continue; // arches are for threading, pillars are wide apart
+        // segment test so high speed can't tunnel through a prop between ticks
+        const crossed=p.prevGx===undefined
+          ? Math.abs(gx-nm.gx)<10
+          : (p.prevGx-nm.gx)*(gx-nm.gx)<=0||Math.abs(gx-nm.gx)<10;
+        if(!crossed)continue;
+        const latD=Math.abs(p.lat-nm.z);
+        if(!nm.hit&&latD<nm.r&&altU<nm.h){ // direct hit: crash
+          nm.hit=true;
+          crashFlight(nm.kind==="whale"?"a very surprised whale":"an obstacle");
+          break;
+        }
+        if(!nm.hit&&p.spd>60&&latD<nm.r+8&&altU<nm.h+9){ // close, but clean
           nm.hit=true;
           const v=Math.floor(10*stats().mult);
           p.stuntCoins+=v;sfx.coin(3);
@@ -1755,8 +1788,9 @@ function physTick(dt){
           if(nm.kind==="whale"&&earnStamp("hidden_whale",null))msg("🐋 It waved back. Probably.");
         }
       }
+      if(!flight.on)return; // crashed
       for(const ar of c.arches){
-        if(!ar.hit&&Math.abs(gx-ar.gx)<10&&Math.abs(p.lat-ar.z)<11*ar.scale){
+        if(!ar.hit&&p.spd>60&&Math.abs(gx-ar.gx)<10&&Math.abs(p.lat-ar.z)<11*ar.scale){
           const vy0=visY(p.alt);
           if(vy0>ar.y+3&&vy0<ar.y+30*ar.scale){
             ar.hit=true;
@@ -1769,6 +1803,7 @@ function physTick(dt){
       }
     }
   }
+  p.prevGx=(p.alt<500&&!p.descent)?p.posMi*UPM:undefined;
 
   // altitude milestone stamps
   if(p.alt>4000&&earnStamp("clouds_first","☁️<br>CLOUD BREAK"))towerMessage("Sophie says those wings look GORGEOUS above the clouds.",2200,"🪽 SOPHIE'S WING SHOP");
@@ -1809,8 +1844,8 @@ function physTick(dt){
     startP9Cinema();return;
   }
 
-  // descent begins
-  if(p.fuel<=0&&p.vy<0&&!p.descent&&p.time>1){
+  // descent begins only once the glide truly stalls out
+  if(p.fuel<=0&&p.stalled&&!p.descent&&p.time>1){
     p.descent=true;
     ui.callit.classList.add("show");
     if(p.peakAlt>60000&&!p.reentry){p.reentry=true;startReentry()}
@@ -1865,10 +1900,20 @@ function endFlight(reason){
   ui.reentry.classList.remove("show");
   boostHeld=false;pitchTarget=0;latTarget=0;
   sfx.land();
-  bankRun(reason==="called"?"Banked mid-air. Smart.":"Rode it all the way down.");
-  towerMessage("Nice landing. We'll get farther next time.",1800);
+  bankRun(reason==="called"?"Banked mid-air. Smart.":
+          reason==="crashed"?"Walked away from that one.":"Rode it all the way down.");
+  towerMessage(reason==="crashed"?"Jorge's Control Tower: ...we all saw that. The run still counts.":"Nice landing. We'll get farther next time.",1800);
   resetPlane();
   staticDirty=true;
+}
+/* Obstacles are solid: hitting one ends the flight on the spot (fast, like
+   CALL IT — the run banks in full and you're back on the pad). */
+function crashFlight(what){
+  if(!flight.on)return;
+  beep(90,.4,"sawtooth",.14);beep(50,.6,"square",.1);
+  spawnFirework(craft.position.x,Math.max(6,craft.position.y),craft.position.z);
+  msg(`💥 Smacked straight into ${what}.`);
+  endFlight("crashed");
 }
 ui.callit.onclick=()=>{if(flight.on&&p.descent)endFlight("called")};
 ui.launch.onclick=launchFlight;
@@ -1925,7 +1970,7 @@ const SHOPS={
 };
 const trackDesc={
   engine:"Cruise speed. Eats headwinds for breakfast.",
-  aero:"Slicker airflow. Speed AND a touch more climb.",
+  aero:"Slicker airflow. Speed, a touch more climb, and a flatter glide.",
   fuel:"Longer burns. Longer burns mean longer flights.",
   boost:"Rocket thrust for above the atmosphere. Required for space.",
   lift:"Climb rate. The only way is up.",
@@ -2027,18 +2072,27 @@ ui.confirmYes.onclick=()=>{store.clear();location.reload()};
 ui.soundBtn.onclick=()=>{state.sound=!state.sound;ui.soundBtn.textContent=state.sound?"🔊 Sound: On":"🔇 Sound: Off";save()};
 ui.soundBtn.textContent=state.sound?"🔊 Sound: On":"🔇 Sound: Off";
 
-/* ---------------- Speedometer (ported from v10) ---------------- */
+/* ---------------- Speedometer (v10 DNA: the gauge grows with your engine) ----------------
+   Each engine tier has its own top speed, and the dial rescales to match it:
+   the red zone always sits just under THIS engine's actual max, so the needle
+   only kisses red when you're genuinely flat out. Buying an engine visibly
+   redraws the whole scale. */
 let speedoSmooth=0;
+function gaugeSpec(){
+  const st=stats();
+  const capMph=st.speed*1.18;                       // true max (boost included)
+  const maxMph=Math.max(75,Math.ceil(capMph/25)*25); // dial rescales per engine
+  const redStart=Math.max(.5,(st.speed*.92)/maxMph); // red = near THIS engine's max
+  return {capMph,maxMph,redStart,cruise:st.speed};
+}
 function drawSpeedo(){
   const c=ui.speedo,g=c.getContext("2d");
   const W=c.width,H=c.height,cx=W/2,cy=H-12,R=64;
   g.clearRect(0,0,W,H);
   const mph=p.spd;
   speedoSmooth+=(mph-speedoSmooth)*.18;
-  const capMph=stats().speed*1.25;
-  const maxMph=Math.max(200,Math.ceil(capMph/50)*50);
+  const {maxMph,redStart,cruise}=gaugeSpec();
   const frac=Math.min(1,speedoSmooth/maxMph);
-  const redStart=Math.max(.6,(capMph*.92)/maxMph);
   const a0=Math.PI;
   g.lineWidth=10;g.lineCap="round";
   const zone=(f0,f1,col)=>{g.strokeStyle=col;g.beginPath();g.arc(cx,cy,R,a0+Math.PI*f0,a0+Math.PI*f1);g.stroke()};
@@ -2054,7 +2108,7 @@ function drawSpeedo(){
   g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+Math.cos(na)*(R-8),cy+Math.sin(na)*(R-8));g.stroke();
   g.fillStyle="#fff";g.beginPath();g.arc(cx,cy,5,0,7);g.fill();
   g.font="900 16px Nunito, Arial";g.textAlign="center";
-  g.fillStyle=speedoSmooth>=capMph*.92?"#f87171":"#fff";
+  g.fillStyle=speedoSmooth>=cruise*.92?"#f87171":"#fff";
   g.fillText(Math.round(speedoSmooth)+" mph",cx,cy-18);
   g.font="700 10px Nunito, Arial";g.fillStyle="rgba(255,255,255,.6)";
   g.fillText("0",cx-R-2,cy+2);g.fillText(maxMph+"",cx+R+2,cy+2);
@@ -2195,7 +2249,8 @@ function loop(now){
 }
 // tiny dev/test hook (harmless in normal play)
 window.__PPO={getState:()=>state,getP:()=>p,setAlt:a=>{p.alt=a},setPos:m=>{p.posMi=m},
-  isCinema:()=>!!cinema,visY,stats,setCraftForm,renderer};
+  isCinema:()=>!!cinema,visY,stats,setCraftForm,renderer,gaugeSpec,
+  chunkAt:i=>chunks.get(i),CHUNK,UPM};
 
 setCraftForm(craftIndex(state.up));
 applyLapMood();

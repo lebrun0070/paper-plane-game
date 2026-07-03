@@ -63,6 +63,18 @@ paper/ink palette, Permanent Marker + Nunito, taped clipboard panels all carried
   (see scratchpad test*.mjs pattern; chromium at /opt/pw-browsers/chromium with
   swiftshader flags). Zero console errors across the full suite.
 
+## Post-ship playtest fixes (committed after Phase 5)
+- **Collision**: props in `chunk.nearMiss` are solid — touching one calls
+  `crashFlight()` (banks the run, CALL IT-style). Near-miss pays only in the
+  margin band (r..r+8 lateral, h..h+9 height) without contact. Segment test
+  vs `p.prevGx` prevents tunneling. Arches (`kind==="arch"`) stay passable.
+- **Glide**: fuel-out cuts thrust only; glide ratio `3 + min(12, aero*0.3)`,
+  dive trades altitude for speed (cap 1.35× cruise), flare floats but bleeds
+  speed; `p.stalled` (<30 mph or above atmosphere) gates fast-fall + CALL IT.
+  `ECON.descentSec` = 6 covers the optimal wind-down; sim re-proven 15.98 h.
+- **Speedometer**: `gaugeSpec()` rescales the dial per engine tier (min 75 mph,
+  25 mph steps, redline just under the current engine's max) — v10 behavior.
+
 ## Phase log
 - [x] Phase 1 — flyable 3D core (launch/physics/meadow/HUD/CALL IT/fast falls).
 - [x] Phase 2 — 8 biomes, world wrap, lap events + variants, crew hub, shops.
