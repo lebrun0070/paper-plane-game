@@ -117,6 +117,15 @@ h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;letter
 .boostBtn.show{display:flex}
 .boostBtn:active{transform:scale(.94)}
 
+/* ---------- Lap banner ---------- */
+.lapBanner{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%) rotate(-2deg) scale(.7);
+  z-index:45;opacity:0;pointer-events:none;transition:.35s;text-align:center;
+  background:var(--paper);border:6px double var(--stampred);border-radius:10px;padding:18px 34px;
+  box-shadow:0 18px 50px rgba(0,0,0,.5)}
+.lapBanner.show{opacity:1;transform:translate(-50%,-50%) rotate(-2deg) scale(1)}
+.lapBanner .h{font-family:'Permanent Marker',cursive;font-size:34px;color:var(--stampred);letter-spacing:2px}
+.lapBanner .s{font-weight:800;color:var(--ink);margin-top:6px;font-size:15px;line-height:1.5}
+
 /* ---------- Re-entry cinematic overlay ---------- */
 .reentry{position:fixed;inset:0;z-index:40;pointer-events:none;opacity:0;transition:.4s;
   background:radial-gradient(ellipse at 50% 70%,rgba(255,140,40,.55),rgba(200,40,10,.35) 45%,rgba(10,5,20,.85))}
@@ -216,6 +225,7 @@ h1{margin:2px 0 2px;font-family:'Permanent Marker',cursive;font-size:24px;letter
 <button id="callit" class="callit">CALL IT ✓</button>
 <button id="boostBtn" class="boostBtn">🚀</button>
 <div id="reentry" class="reentry"><div class="rt">RE-ENTRY</div></div>
+<div id="lapBanner" class="lapBanner"><div class="h" id="lapBannerH">LAP 1 COMPLETE!</div><div class="s" id="lapBannerS"></div></div>
 
 <div id="summary" class="summary">
   <h2>Flight Log</h2>
@@ -273,6 +283,9 @@ const ECON = {
   atmosphereTopFt: 120000,    // above this, climbing needs Rocket Boost
   starMult: 0.25,             // income multiplier per Legacy Star
   lapIncomeMult: 0.30,        // permanent income bonus per completed lap
+  stormBonus: 1.25,           // storm season (lap 4+): highest risk, highest reward
+  lapCashBase: 400,           // one-time cash on completing a lap
+  lapCashGrowth: 3.0,
   wallReqBase: 2,             // headwind wall tier requirements
   wallReqPerBorder: 2.0,
   coinDistRate: 1.0,
@@ -293,8 +306,11 @@ function statsFor(up, stars, laps){
     climb: (14+7*L)*(1+0.04*A),                            // ft/s in atmosphere
     spaceClimb: B>0 ? 900*B*(1+0.10*L) : 0,                // ft/s above atmosphere
     hullCap: 5200*Math.pow(1.75,H),                        // survivable ceiling ft
-    mult: (1+stars*ECON.starMult)*(1+laps*ECON.lapIncomeMult),
+    mult: (1+stars*ECON.starMult)*(1+laps*ECON.lapIncomeMult)*(laps>=3?ECON.stormBonus:1),
   };
+}
+function lapCash(newLapNumber, mult){ // one-time celebration payout for lap N (1-based)
+  return Math.floor(ECON.lapCashBase*Math.pow(ECON.lapCashGrowth,newLapNumber-1)*mult);
 }
 function gateCapFor(laps){ const g=ECON.gateCaps; return g[Math.min(g.length-1, laps)]; }
 // Border index k (cumulative across laps) needs engine+aero >= wallReq(k) to pass.
@@ -373,7 +389,8 @@ callit:$("callit"),boostBtn:$("boostBtn"),reentry:$("reentry"),speedo:$("speedo"
 wstrip:$("wstrip"),wstripBar:$("wstripBar"),wstripPlane:$("wstripPlane"),wstripLbl:$("wstripLbl"),
 summary:$("summary"),sumDist:$("sumDist"),sumAlt:$("sumAlt"),sumCoins:$("sumCoins"),sumNote:$("sumNote"),
 confirmReset:$("confirmReset"),confirmYes:$("confirmYes"),confirmNo:$("confirmNo"),
-confirmPrestige:$("confirmPrestige"),prestigeText:$("prestigeText"),prestigeYes:$("prestigeYes"),prestigeNo:$("prestigeNo")};
+confirmPrestige:$("confirmPrestige"),prestigeText:$("prestigeText"),prestigeYes:$("prestigeYes"),prestigeNo:$("prestigeNo"),
+lapBanner:$("lapBanner"),lapBannerH:$("lapBannerH"),lapBannerS:$("lapBannerS")};
 
 /* ---------------- State & save ---------------- */
 const saveKey="paperPlaneOdyssey3Dv1";
@@ -467,6 +484,7 @@ const SKY_STOPS=[
   [400000,  0x03040f, 0x0a1030],
 ];
 const _c1=new THREE.Color(),_c2=new THREE.Color(),_c3=new THREE.Color(),_c4=new THREE.Color();
+const _tint=new THREE.Color(),_white=new THREE.Color(1,1,1);
 function skyFor(alt){
   let a=SKY_STOPS[0],b=SKY_STOPS[0];
   for(const s of SKY_STOPS){ if(alt>=s[0]){a=b=s} else {b=s;break} }
@@ -522,7 +540,7 @@ function biomeIdxAt(posMi){
 const biomeStripColors=["#74b95c","#c9b458","#2f7fc1","#3fae9d","#dcb46a","#2e6b34","#8d9298","#e8f2fa"];
 ui.wstripBar.innerHTML=biomeStripColors.map(c=>`<div style="background:${c}"></div>`).join("");
 
-/* ---------------- Props ---------------- */
+/* ---------------- Props (all 8 biomes) ---------------- */
 function tree(){
   const g=new THREE.Group();
   const t=new THREE.Mesh(G.trunk,M.trunk);t.position.y=3.5;g.add(t);
@@ -538,14 +556,170 @@ function flowerPatch(){
   }
   return g;
 }
-const PROPS={home_meadow:[tree,tree,rock,flowerPatch]};
+function windmill(){
+  const g=new THREE.Group();
+  const tower=new THREE.Mesh(new THREE.CylinderGeometry(1.2,2.4,22,6),flatMat(0xe8e2d2));tower.position.y=11;g.add(tower);
+  const hub=new THREE.Group();hub.position.set(0,22,2.6);
+  for(let i=0;i<4;i++){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(1.4,10,.3),flatMat(0xd9cfb4));
+    b.position.y=5;const arm=new THREE.Group();arm.add(b);arm.rotation.z=i*Math.PI/2;hub.add(arm);
+  }
+  g.add(hub);hub.userData.spinRate=.8+Math.random()*.6;
+  return g;
+}
+function barn(){
+  const g=new THREE.Group();
+  const b=new THREE.Mesh(new THREE.BoxGeometry(12,7,9),flatMat(0xb0392e));b.position.y=3.5;g.add(b);
+  const r=new THREE.Mesh(new THREE.CylinderGeometry(4.5,4.5,12,3,1),flatMat(0x7a2620));
+  r.rotation.z=Math.PI/2;r.rotation.x=Math.PI;r.position.y=8.6;g.add(r);
+  return g;
+}
+function hayBale(){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.8,2.6,8),flatMat(0xdcc060));
+  m.rotation.z=Math.PI/2;m.position.y=1.8;return m;
+}
+function whale(){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(3.4,10,3,6),flatMat(0x3d5666));
+  body.rotation.z=.9;body.position.y=3;g.add(body);
+  const tail=new THREE.Mesh(new THREE.ConeGeometry(3,5,4),flatMat(0x33485a));
+  tail.rotation.z=2.2;tail.position.set(-6,-1,0);g.add(tail);
+  const spout=new THREE.Mesh(new THREE.ConeGeometry(1.4,5,5),M.cloud);
+  spout.position.set(4,10,0);g.add(spout);
+  return g;
+}
+function sailboat(){
+  const g=new THREE.Group();
+  const hull=new THREE.Mesh(new THREE.CylinderGeometry(2.4,1,8,4,1),flatMat(0x8a5a2b));
+  hull.rotation.z=Math.PI/2;hull.rotation.y=Math.PI/4;hull.position.y=1;g.add(hull);
+  const mast=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,10,4),M.ink);mast.position.y=6;g.add(mast);
+  const sailGeo=new THREE.BufferGeometry();
+  sailGeo.setAttribute("position",new THREE.BufferAttribute(new Float32Array([0,11,0, 0,2.5,0, 5.5,2.5,0]),3));
+  sailGeo.computeVertexNormals();
+  const sail=new THREE.Mesh(sailGeo,new THREE.MeshLambertMaterial({color:0xf7f3e8,side:THREE.DoubleSide,flatShading:true}));
+  g.add(sail);
+  return g;
+}
+function palmIsland(){
+  const g=new THREE.Group();
+  const sand=new THREE.Mesh(new THREE.CylinderGeometry(12,16,3,7),flatMat(0xe8d9a0));sand.position.y=1;g.add(sand);
+  for(let k=0;k<1+Math.floor(Math.random()*2);k++){
+    const px=(Math.random()-.5)*10,pz=(Math.random()-.5)*10,lean=(Math.random()-.5)*.5;
+    for(let i=0;i<4;i++){
+      const seg=new THREE.Mesh(new THREE.CylinderGeometry(.5-.06*i,.6-.06*i,3.4,5),flatMat(0x9a6b38));
+      seg.position.set(px+lean*i*2.2,3.5+i*3.1,pz);seg.rotation.z=lean*.5;g.add(seg);
+    }
+    for(let i=0;i<5;i++){
+      const frond=new THREE.Mesh(new THREE.ConeGeometry(1.2,7,4),flatMat(0x2f8f4e));
+      frond.position.set(px+lean*8.8,16,pz);
+      frond.rotation.z=Math.PI/2.4;frond.rotation.y=i*Math.PI*2/5;
+      frond.translateY(3);g.add(frond);
+    }
+  }
+  return g;
+}
+function cactus(){
+  const g=new THREE.Group();
+  const mat=flatMat(0x3f8f45);
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.4,9,6),mat);body.position.y=4.5;g.add(body);
+  const arm1=new THREE.Mesh(new THREE.CylinderGeometry(.8,.8,4,6),mat);arm1.position.set(2.2,6,0);arm1.rotation.z=-.5;g.add(arm1);
+  const arm2=new THREE.Mesh(new THREE.CylinderGeometry(.8,.8,3,6),mat);arm2.position.set(-2,4.6,0);arm2.rotation.z=.6;g.add(arm2);
+  return g;
+}
+function mesa(){
+  const g=new THREE.Group();
+  const c1=new THREE.Mesh(new THREE.CylinderGeometry(14,20,10,7),flatMat(0xc07848));c1.position.y=5;g.add(c1);
+  const c2=new THREE.Mesh(new THREE.CylinderGeometry(10,13,7,7),flatMat(0xd08d58));c2.position.y=13.5;g.add(c2);
+  return g;
+}
+function jungleTree(){
+  const g=new THREE.Group();
+  const t=new THREE.Mesh(new THREE.CylinderGeometry(1,1.6,16,5),flatMat(0x6b4a24));t.position.y=8;g.add(t);
+  for(let i=0;i<3;i++){
+    const c=new THREE.Mesh(G.puff,flatMat(i%2?0x1f5c2a:0x2c7a36));
+    c.position.set((Math.random()-.5)*8,16+Math.random()*4,(Math.random()-.5)*8);
+    c.scale.set(6+Math.random()*4,3+Math.random()*2,6+Math.random()*4);g.add(c);
+  }
+  return g;
+}
+function ruin(){
+  const g=new THREE.Group();
+  const stone=flatMat(0xb8ac90);
+  for(let i=0;i<4;i++){
+    const col=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,7+Math.random()*4,6),stone);
+    col.position.set(i*4-6,4,0);col.rotation.z=(Math.random()-.5)*.14;g.add(col);
+  }
+  const lintel=new THREE.Mesh(new THREE.BoxGeometry(10,1.6,3),stone);lintel.position.set(-4,9,0);g.add(lintel);
+  const step=new THREE.Mesh(new THREE.BoxGeometry(20,2,10),flatMat(0xa89c80));step.position.y=1;g.add(step);
+  return g;
+}
+function pine(){
+  const g=new THREE.Group();
+  const t=new THREE.Mesh(G.trunk,M.trunk);t.position.y=3.5;g.add(t);
+  for(let i=0;i<3;i++){
+    const c=new THREE.Mesh(G.cone,M.leafDark);c.scale.setScalar(1-.22*i);c.position.y=8+i*4.4;g.add(c);
+  }
+  return g;
+}
+/* Stone arches — you can fly THROUGH these (hidden stamp lives here) */
+const archList=[]; // {gx,z,y} gap centers, global units
+function stoneArch(){
+  const g=new THREE.Group();
+  const stone=flatMat(0x9a8f80);
+  const p1=new THREE.Mesh(new THREE.BoxGeometry(6,34,8),stone);p1.position.set(-14,17,0);g.add(p1);
+  const p2=new THREE.Mesh(new THREE.BoxGeometry(6,34,8),stone);p2.position.set(14,17,0);g.add(p2);
+  const top=new THREE.Mesh(new THREE.BoxGeometry(36,7,9),stone);top.position.y=36;g.add(top);
+  g.userData.isArch=true;
+  return g;
+}
+function iceberg(){
+  const m=new THREE.Mesh(new THREE.DodecahedronGeometry(8,0),flatMat(0xe4f2fb));
+  m.scale.set(1+Math.random(), .7+Math.random()*.9, 1+Math.random());
+  m.position.y=2;return m;
+}
+function igloo(){
+  const g=new THREE.Group();
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(4,8,5,0,Math.PI*2,0,Math.PI/2),flatMat(0xf2f8fd));g.add(dome);
+  const door=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,3,6,1,false,0,Math.PI),flatMat(0xd8e8f4));
+  door.rotation.z=Math.PI/2;door.position.set(4,1,0);g.add(door);
+  return g;
+}
+/* Little towns — their windows light up on night laps */
+function town(){
+  const g=new THREE.Group();
+  for(let i=0;i<4+Math.floor(Math.random()*3);i++){
+    const h=5+Math.random()*14;
+    const b=new THREE.Mesh(new THREE.BoxGeometry(4+Math.random()*4,h,4+Math.random()*4),flatMat(0x8d95a3));
+    b.position.set((Math.random()-.5)*24,h/2,(Math.random()-.5)*24);g.add(b);
+    const w=new THREE.Mesh(new THREE.BoxGeometry(b.geometry.parameters.width*.94,h*.86,b.geometry.parameters.depth*.94),
+      new THREE.MeshLambertMaterial({color:0x22303f,emissive:0xffc86b,emissiveIntensity:0,flatShading:true}));
+    w.position.copy(b.position);w.userData.litWindow=true;g.add(w);
+  }
+  return g;
+}
+const PROPS={
+  home_meadow:[tree,tree,rock,flowerPatch,flowerPatch,town],
+  farmland:[windmill,barn,hayBale,hayBale,tree,town],
+  ocean:[whale,sailboat,sailboat],
+  tropics:[palmIsland,palmIsland,sailboat],
+  desert:[cactus,cactus,mesa,rock,town],
+  jungle:[jungleTree,jungleTree,jungleTree,ruin],
+  mountains:[pine,pine,rock,stoneArch],
+  arctic:[iceberg,iceberg,igloo],
+};
 function propsFor(b){return PROPS[b.key]||[tree,rock]}
 
 /* ---------------- Terrain chunks ---------------- */
 const CHUNK=600, CHUNK_W=2400, AHEAD=14, BEHIND=2;
-const chunks=new Map(); // idx -> {group, props:[{x,z,r}]}
+const chunks=new Map(); // idx -> {group, nearMiss, spin, windows, arches}
 let originOffset=0;     // floating-origin shift (visual units)
 function hash(n){const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+function terrainH(b,wx,wz){
+  const h=(hash(Math.round(wx/60)*7+Math.round(wz/60)*13)+hash(Math.round(wx/200)*3))*b.hills
+        + (b.hills>15?hash(Math.round(wx/120)*5+Math.round(wz/120))*b.hills*1.6:0);
+  const edge=Math.min(1,Math.abs(wz)/300); // keep flight corridor flatter
+  return h*(.25+.75*edge)-(b.water?2:0);
+}
 function makeChunk(idx){
   const startMi=idx*CHUNK/UPM;
   const b=BIOMES[biomeIdxAt(startMi)];
@@ -559,10 +733,7 @@ function makeChunk(idx){
   const c0=new THREE.Color(b.ground[0]),c1=new THREE.Color(b.ground[1]),cc=new THREE.Color();
   for(let i=0;i<pos.count;i++){
     const wx=pos.getX(i)+idx*CHUNK+CHUNK/2, wz=pos.getZ(i);
-    const h=(hash(Math.round(wx/60)*7+Math.round(wz/60)*13)+hash(Math.round(wx/200)*3))*b.hills
-          + (b.hills>15?hash(Math.round(wx/120)*5+Math.round(wz/120))*b.hills*1.6:0);
-    const edge=Math.min(1,Math.abs(wz)/300); // keep flight corridor flatter
-    pos.setY(i,h*(.25+.75*edge)-(b.water?2:0));
+    pos.setY(i,terrainH(b,wx,wz));
     cc.copy(c0).lerp(c1,hash(i*3.7+idx));
     col[i*3]=cc.r;col[i*3+1]=cc.g;col[i*3+2]=cc.b;
   }
@@ -572,25 +743,59 @@ function makeChunk(idx){
   ground.position.x=idx*CHUNK+CHUNK/2-originOffset;
   group.add(ground);
   // props
-  const nearMiss=[];
+  const nearMiss=[],arches=[];
   const makers=propsFor(b);
-  const n=b.water?4:20;
+  const n=b.water?5:20;
   for(let i=0;i<n;i++){
-    const p=makers[Math.floor(hash(idx*31+i*7)*makers.length)]();
+    const pr=makers[Math.floor(hash(idx*31+i*7)*makers.length)]();
     const lx=hash(idx*17+i*3)*CHUNK, lz=(hash(idx*11+i*5)-.5)*900;
-    p.position.set(idx*CHUNK+lx-originOffset,0,lz);
-    p.rotation.y=hash(i*9)*6.28;
-    const s=.8+hash(idx+i)*1.5;p.scale.setScalar(s);
-    group.add(p);
-    nearMiss.push({x:idx*CHUNK+lx,z:lz,r:6*s,h:14*s});
+    const gx=idx*CHUNK+lx;
+    const s=.8+hash(idx+i)*1.5;
+    const gy=b.water?0:terrainH(b,gx,lz);
+    pr.position.set(gx-originOffset,gy,lz);
+    if(pr.userData.isArch){pr.rotation.y=0;pr.scale.setScalar(1.4+hash(idx+i));
+      arches.push({gx,z:lz,y:gy,scale:pr.scale.x});}
+    else pr.rotation.y=hash(i*9)*6.28;
+    if(!pr.userData.isArch)pr.scale.setScalar(s);
+    group.add(pr);
+    nearMiss.push({gx,z:lz,r:7*s,h:16*s});
   }
+  // arctic auroras (visible on night laps)
+  const auroras=[];
+  if(b.key==="arctic"){
+    for(let i=0;i<2;i++){
+      const ag=new THREE.PlaneGeometry(500,140,10,3);
+      const ac=new Float32Array(ag.attributes.position.count*3);
+      const g1=new THREE.Color(0x3ef2a0),g2=new THREE.Color(0x7a5cff),tc=new THREE.Color();
+      for(let k=0;k<ag.attributes.position.count;k++){
+        tc.copy(g1).lerp(g2,hash(k*1.3+i));ac[k*3]=tc.r;ac[k*3+1]=tc.g;ac[k*3+2]=tc.b;
+      }
+      ag.setAttribute("color",new THREE.BufferAttribute(ac,3));
+      const am=new THREE.Mesh(ag,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,
+        opacity:0,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
+      am.position.set(idx*CHUNK+hash(idx+i*3)*CHUNK-originOffset,320+i*90,(hash(idx*5+i)-.5)*1200);
+      am.userData.aurora=true;
+      group.add(am);auroras.push(am);
+    }
+  }
+  const spin=[],windows=[];
+  group.traverse(o=>{
+    if(o.userData.spinRate)spin.push(o);
+    if(o.userData.litWindow)windows.push(o);
+  });
+  for(const w of windows)w.material.emissiveIntensity=nightOn()?.9:0;
+  for(const a of auroras)a.material.opacity=nightOn()?.5:0;
   scene.add(group);
-  return {group,nearMiss,idx};
+  return {group,nearMiss,arches,spin,windows,auroras,idx};
 }
 function disposeChunk(c){
-  c.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();if(o.material.vertexColors)o.material.dispose()}});
+  c.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();
+    if(o.material&&(o.material.vertexColors||o.userData.litWindow))o.material.dispose()}});
   scene.remove(c.group);
 }
+function nightOn(){return state.laps===2}
+function stormOn(){return state.laps>=3}
+function goldenOn(){return state.laps===1}
 function updateChunks(){
   const gx=p.posMi*UPM; // global visual x
   const cur=Math.floor(gx/CHUNK);
@@ -602,18 +807,211 @@ function updateChunks(){
   }
 }
 
-/* ---------------- Launch pad (hub grows in Phase 2) ---------------- */
+/* ---------------- Canvas-texture signs (only texture source in the game) ---------------- */
+function makeSign(text,bg,fg,w,h){
+  const cnv=document.createElement("canvas");cnv.width=w||256;cnv.height=h||64;
+  const g=cnv.getContext("2d");
+  g.fillStyle=bg;g.fillRect(0,0,cnv.width,cnv.height);
+  g.strokeStyle=fg;g.lineWidth=4;g.strokeRect(3,3,cnv.width-6,cnv.height-6);
+  g.fillStyle=fg;g.font=`bold ${Math.floor(cnv.height*.48)}px 'Permanent Marker',cursive`;
+  g.textAlign="center";g.textBaseline="middle";
+  g.fillText(text,cnv.width/2,cnv.height/2+2);
+  const tex=new THREE.CanvasTexture(cnv);
+  return new THREE.MeshBasicMaterial({map:tex});
+}
+function signPlane(text,bg,fg,sw,sh){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(sw||14,sh||3.6),makeSign(text,bg,fg));
+  return m;
+}
+
+/* ---------------- Crew figures (the whole v10 gang) ---------------- */
+function person(shirtHex,hatHex){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(1,2,2,6),flatMat(shirtHex));body.position.y=2.4;g.add(body);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.9,7,6),flatMat(0xe8b88a));head.position.y=4.8;g.add(head);
+  if(hatHex!==undefined){
+    const hat=new THREE.Mesh(new THREE.CylinderGeometry(.95,.95,.6,7),flatMat(hatHex));hat.position.y=5.5;g.add(hat);
+  }
+  return g;
+}
+
+/* ---------------- Launch-site hub: everyone has a building ---------------- */
 const pad=new THREE.Group();
+const crewFigures={};
 {
   const base=new THREE.Mesh(new THREE.BoxGeometry(26,2,10),M.pad);base.position.y=1;pad.add(base);
   const ramp=new THREE.Mesh(new THREE.BoxGeometry(22,1,6),flatMat(0xa86a30));
   ramp.position.set(2,4,0);ramp.rotation.z=.18;pad.add(ramp);
-  const poleG=new THREE.CylinderGeometry(.3,.3,16,5);
-  const pole=new THREE.Mesh(poleG,M.ink);pole.position.set(-11,8,4);pad.add(pole);
-  const flag=new THREE.Mesh(new THREE.BoxGeometry(6,3.4,.2),flatMat(0xd3271c));
-  flag.position.set(-8,14,4);pad.add(flag);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,16,5),M.ink);pole.position.set(-11,8,4);pad.add(pole);
+  const flag=new THREE.Mesh(new THREE.BoxGeometry(6,3.4,.2),flatMat(0xd3271c));flag.position.set(-8,14,4);pad.add(flag);
+
+  function shack(wallHex,roofHex,signText,signBg){
+    const s=new THREE.Group();
+    const w=new THREE.Mesh(new THREE.BoxGeometry(14,8,11),flatMat(wallHex));w.position.y=4;s.add(w);
+    const r=new THREE.Mesh(new THREE.CylinderGeometry(6.4,6.4,15,3,1),flatMat(roofHex));
+    r.rotation.z=Math.PI/2;r.rotation.x=Math.PI;r.position.y=10;s.add(r);
+    const sign=signPlane(signText,signBg,"#f6efe0",13,3.2);sign.position.set(0,9.4,5.8);s.add(sign);
+    return s;
+  }
+  // Mikey's Workshop — fuel & boost
+  const mikey=shack(0x4a6fa5,0x1d4ed8,"MIKEY'S WORKSHOP","#1d4ed8");
+  mikey.position.set(-40,0,-46);pad.add(mikey);
+  crewFigures.mikey=person(0x1d4ed8,0x22303f);crewFigures.mikey.position.set(-33,0,-38);pad.add(crewFigures.mikey);
+  // Sophie's Glamorous Wing Shop
+  const sophie=shack(0xd88aa8,0xbe185d,"SOPHIE'S WINGS","#be185d");
+  sophie.position.set(-64,0,-30);pad.add(sophie);
+  const awning=new THREE.Mesh(new THREE.BoxGeometry(15,.5,4),flatMat(0xf2c9d8));awning.position.set(-64,7,-23.6);awning.rotation.x=.3;pad.add(awning);
+  crewFigures.sophie=person(0xbe185d);crewFigures.sophie.position.set(-57,0,-22);pad.add(crewFigures.sophie);
+  // Nico's Airframe Garage
+  const nico=shack(0x9a7648,0x92400e,"NICO'S AIRFRAME","#92400e");
+  nico.position.set(-40,0,46);pad.add(nico);
+  const doorway=new THREE.Mesh(new THREE.BoxGeometry(8,6,.6),flatMat(0x3a2c18));doorway.position.set(-40,3,40.2);pad.add(doorway);
+  crewFigures.nico=person(0x92400e,0x5b3a10);crewFigures.nico.position.set(-33,0,38);pad.add(crewFigures.nico);
+  // Mateo & Gary's Engine Depot (two of them, obviously)
+  const depot=shack(0x3f8f6a,0x047857,"ENGINE DEPOT","#047857");
+  depot.position.set(-64,0,30);pad.add(depot);
+  for(let i=0;i<3;i++){
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,3,7),flatMat(i%2?0xd3271c:0x22303f));
+    barrel.position.set(-55+i*3,1.5,24-i*2);pad.add(barrel);
+  }
+  crewFigures.mateo=person(0x047857,0xd3271c);crewFigures.mateo.position.set(-58,0,22);pad.add(crewFigures.mateo);
+  crewFigures.gary=person(0x065f46);crewFigures.gary.position.set(-54,0,20);pad.add(crewFigures.gary);
+  // Jorge's Control Tower / Passport Office (→ Mission Control after orbital tech)
+  const towerGrp=new THREE.Group();
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(2.6,3.4,26,7),flatMat(0xc9c2b0));shaft.position.y=13;towerGrp.add(shaft);
+  const cab=new THREE.Mesh(new THREE.CylinderGeometry(6,4.6,6,7),flatMat(0x22303f));cab.position.y=29;towerGrp.add(cab);
+  const glass=new THREE.Mesh(new THREE.CylinderGeometry(5.6,5.6,3,7),new THREE.MeshLambertMaterial({color:0x9fd0e8,emissive:0x2c4a66,emissiveIntensity:.4,flatShading:true}));
+  glass.position.y=29.6;towerGrp.add(glass);
+  towerGrp.position.set(-88,0,0);pad.add(towerGrp);
+  const towerSign=signPlane("JORGE'S TOWER","#101820","#ffd76e",13,3.2);
+  towerSign.position.set(-88,20,4.2);pad.add(towerSign);
+  const mcSign=signPlane("MISSION CONTROL","#101820","#7dd3fc",15,3.4);
+  mcSign.position.set(-88,16,4.3);mcSign.visible=false;mcSign.name="mcSign";pad.add(mcSign);
+  const dish=new THREE.Group();
+  const dishM=new THREE.Mesh(new THREE.SphereGeometry(4,8,5,0,Math.PI*2,0,Math.PI/2.6),flatMat(0xe8e2d2));
+  dishM.rotation.x=-Math.PI/3;dish.add(dishM);
+  dish.position.set(-88,34,0);dish.visible=false;dish.name="mcDish";pad.add(dish);
+  crewFigures.jorge=person(0x22303f,0xffd76e);crewFigures.jorge.position.set(-82,0,8);pad.add(crewFigures.jorge);
 }
 scene.add(pad);
+function refreshHub(){
+  const mc=state.laps>=2;
+  pad.getObjectByName("mcSign").visible=mc;
+  pad.getObjectByName("mcDish").visible=mc;
+}
+refreshHub();
+
+/* ---------------- Celebration: crowd, banner, fireworks ---------------- */
+let celebrateT=0;
+const fireworks=[];
+function spawnFirework(x,y,z){
+  const n=50;
+  const geo=new THREE.BufferGeometry();
+  const posA=new Float32Array(n*3),velA=[];
+  const col=new THREE.Color().setHSL(Math.random(),.9,.6);
+  for(let i=0;i<n;i++){
+    posA[i*3]=x;posA[i*3+1]=y;posA[i*3+2]=z;
+    const th=Math.random()*6.28,ph=Math.random()*3.14,sp=14+Math.random()*26;
+    velA.push([Math.sin(ph)*Math.cos(th)*sp,Math.cos(ph)*sp,Math.sin(ph)*Math.sin(th)*sp]);
+  }
+  geo.setAttribute("position",new THREE.BufferAttribute(posA,3));
+  const mat=new THREE.PointsMaterial({color:col,size:2.2,transparent:true,opacity:1});
+  const pts=new THREE.Points(geo,mat);
+  scene.add(pts);
+  fireworks.push({pts,velA,life:1.6});
+  sfx.star();
+}
+function updateFireworks(dt){
+  for(let i=fireworks.length-1;i>=0;i--){
+    const f=fireworks[i];f.life-=dt;
+    const a=f.pts.geometry.attributes.position;
+    for(let k=0;k<f.velA.length;k++){
+      a.array[k*3]+=f.velA[k][0]*dt;
+      a.array[k*3+1]+=f.velA[k][1]*dt;f.velA[k][1]-=22*dt;
+      a.array[k*3+2]+=f.velA[k][2]*dt;
+    }
+    a.needsUpdate=true;
+    f.pts.material.opacity=Math.max(0,f.life/1.6);
+    if(f.life<=0){scene.remove(f.pts);f.pts.geometry.dispose();f.pts.material.dispose();fireworks.splice(i,1)}
+  }
+  if(celebrateT>0){
+    celebrateT-=dt;
+    let j=0;
+    for(const k in crewFigures){
+      const fig=crewFigures[k];
+      fig.position.y=Math.abs(Math.sin(performance.now()*.006+j))*2.2;
+      j++;
+    }
+    if(Math.random()<dt*2.2){
+      spawnFirework(pad.position.x+(Math.random()-.5)*120,30+Math.random()*50,(Math.random()-.5)*120);
+    }
+    if(celebrateT<=0)for(const k in crewFigures)crewFigures[k].position.y=0;
+  }
+}
+
+/* ---------------- Lap completion & world moods ---------------- */
+const LAP_UNLOCKS=[
+  "Stratosphere tech unlocked — the purple sky is open. Golden hour begins.",
+  "Orbital tech unlocked — Mission Control is now open at Jorge's tower. Night flight begins.",
+  "Deep-space tech unlocked — nothing above you is off-limits now. Storm season begins.",
+  "Storm season rages on. Highest risk, highest reward.",
+];
+function lapComplete(){
+  state.laps++;
+  const cash=lapCash(state.laps,stats().mult);
+  state.money+=cash;state.lifetime+=cash;
+  earnStamp("lap_"+state.laps,`🌍<br>LAP ${state.laps}<br>CIRCUMNAVIGATED`);
+  ui.lapBannerH.textContent=`LAP ${state.laps} COMPLETE!`;
+  ui.lapBannerS.innerHTML=`The whole crew is cheering at the home meadow.<br>+$${cash.toLocaleString()} · permanent +${Math.round(ECON.lapIncomeMult*100)}% earnings<br>${LAP_UNLOCKS[Math.min(state.laps-1,LAP_UNLOCKS.length-1)]}`;
+  ui.lapBanner.classList.add("show");
+  setTimeout(()=>ui.lapBanner.classList.remove("show"),5200);
+  towerMessage(`Jorge's Control Tower: full circumnavigation confirmed. That's one for the record books, pilot.`,3000);
+  celebrateT=7;
+  applyLapMood();refreshHub();refreshChunkMood();
+  save();staticDirty=true;
+}
+function refreshChunkMood(){
+  for(const [,c] of chunks){
+    for(const w of c.windows)w.material.emissiveIntensity=nightOn()?.9:0;
+    if(c.auroras)for(const a of c.auroras)a.material.opacity=nightOn()?.5:0;
+  }
+}
+/* Per-lap lighting mood: lap2 golden hour, lap3 night, lap4+ storm */
+const mood={sunColor:new THREE.Color(0xfff2d8),sunInt:2.1,hemiInt:.85,tint:new THREE.Color(1,1,1),sunPos:new THREE.Vector3(300,500,200)};
+function applyLapMood(){
+  if(stormOn()){mood.sunColor.setHex(0xb8c4d0);mood.sunInt=.9;mood.hemiInt=.55;mood.tint.setRGB(.42,.44,.5);mood.sunPos.set(200,400,300)}
+  else if(nightOn()){mood.sunColor.setHex(0x8fb0e8);mood.sunInt=.45;mood.hemiInt=.3;mood.tint.setRGB(.16,.18,.34);mood.sunPos.set(-200,300,100)}
+  else if(goldenOn()){mood.sunColor.setHex(0xffb36b);mood.sunInt=1.75;mood.hemiInt=.6;mood.tint.setRGB(1.12,.82,.52);mood.sunPos.set(500,130,260)}
+  else{mood.sunColor.setHex(0xfff2d8);mood.sunInt=2.1;mood.hemiInt=.85;mood.tint.setRGB(1,1,1);mood.sunPos.set(300,500,200)}
+  sun.color.copy(mood.sunColor);sun.intensity=mood.sunInt;sun.position.copy(mood.sunPos);
+  hemi.intensity=mood.hemiInt;
+}
+/* ---------------- Storm weather: rain + lightning + gusts ---------------- */
+let rainPts=null,flashT=0;
+{
+  const n=600,posA=new Float32Array(n*3);
+  for(let i=0;i<n;i++){posA[i*3]=(Math.random()-.5)*420;posA[i*3+1]=Math.random()*260-40;posA[i*3+2]=(Math.random()-.5)*420}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position",new THREE.BufferAttribute(posA,3));
+  rainPts=new THREE.Points(geo,new THREE.PointsMaterial({color:0xa8c4dc,size:1.4,transparent:true,opacity:.7}));
+  rainPts.visible=false;scene.add(rainPts);
+}
+function updateWeather(dt){
+  const storm=stormOn()&&p.alt<25000;
+  rainPts.visible=storm;
+  if(storm){
+    rainPts.position.copy(craft.position);
+    const a=rainPts.geometry.attributes.position;
+    for(let i=0;i<a.count;i++){
+      let y=a.array[i*3+1]-320*dt;
+      if(y<-40)y+=260;
+      a.array[i*3+1]=y;
+    }
+    a.needsUpdate=true;
+    if(Math.random()<dt*.28){flashT=.12;sfx.whoosh()}
+  }
+  if(flashT>0){flashT-=dt;hemi.intensity=2.6;if(flashT<=0)hemi.intensity=mood.hemiInt}
+}
 
 /* ---------------- Clouds (recycled puffs) ---------------- */
 const cloudPool=[];
@@ -768,7 +1166,8 @@ function physTick(dt){
   if(p.fuel>0){
     const rate=inAtmo?st.climb:st.spaceClimb;
     if(!inAtmo&&rate<=0){vyT=-30;p.status="NO ROCKET BOOST — thin air"}
-    else vyT=p.pitch>0?p.pitch*rate:(p.pitch<-.05?p.pitch*260:-6);
+    else vyT=p.pitch>0?p.pitch*rate:(p.pitch<-.05?p.pitch*260:0);
+    if(p.alt<25&&vyT<0)vyT=0; // ground effect while powered
   }else{
     p.fallT+=dt;
     const fm=Math.min(7,1+p.fallT*2.2); // falls get FAST
@@ -802,6 +1201,43 @@ function physTick(dt){
   const dMi=p.spd*ECON.mphToMiPerSec*wallF*dt;
   p.posMi+=dMi;p.dist+=dMi;
   if(p.alt>p.peakAlt)p.peakAlt=p.alt;
+
+  // lap completion — the big one
+  while(Math.floor(p.posMi/ECON.circumferenceMi)>state.laps)lapComplete();
+
+  // storm gusts (lap 4+): the sky fights back
+  if(stormOn()&&p.alt<25000){
+    p.lat+=Math.sin(p.time*1.7)*36*dt;
+    p.spd*=1-.02*dt*Math.abs(Math.sin(p.time*.9));
+  }
+
+  // near-misses & arch fly-throughs (low-altitude daring)
+  if(p.alt<500&&p.spd>60&&!p.descent){
+    const gx=p.posMi*UPM;
+    const c=chunks.get(Math.floor(gx/CHUNK));
+    if(c){
+      for(const nm of c.nearMiss){
+        if(!nm.hit&&Math.abs(gx-nm.gx)<10&&Math.abs(p.lat-nm.z)<nm.r+4&&p.alt/6<nm.h+10){
+          nm.hit=true;
+          const v=Math.floor(18*stats().mult);
+          p.stuntCoins+=v;sfx.coin(3);
+          msg(`😬 NEAR MISS +$${v}`);
+        }
+      }
+      for(const ar of c.arches){
+        if(!ar.hit&&Math.abs(gx-ar.gx)<10&&Math.abs(p.lat-ar.z)<11*ar.scale){
+          const vy0=visY(p.alt);
+          if(vy0>ar.y+3&&vy0<ar.y+30*ar.scale){
+            ar.hit=true;
+            const v=Math.floor(60*stats().mult);
+            p.stuntCoins+=v;sfx.star();
+            msg(`🪨 THREADED THE ARCH +$${v}`);
+            earnStamp("hidden_arch",null); // silent — the passport will show it
+          }
+        }
+      }
+    }
+  }
 
   // milestone: first cloud break etc (full set in later phases)
   if(p.alt>4000&&earnStamp("clouds_first","☁️<br>CLOUD BREAK"))towerMessage("Sophie says those wings look GORGEOUS above the clouds.",2200,"🪽 SOPHIE'S WING SHOP");
@@ -870,20 +1306,55 @@ function endFlight(reason){
 ui.callit.onclick=()=>{if(flight.on&&p.descent)endFlight("called")};
 ui.launch.onclick=launchFlight;
 
-/* ---------------- Shops (v10 crew — full hub & dialogue in Phase 2) ---------------- */
+/* ---------------- Shops & dialogue (the v10 crew, voices intact) ---------------- */
+function progressTier(){
+  if(state.stamps.includes("pluto"))return 4;
+  if(state.bestAlt>=1500000)return 3;   // Moon
+  if(state.bestAlt>=400000)return 2;    // orbit
+  if(state.laps>=1)return 1;            // first lap
+  return 0;
+}
 const SHOPS={
-  mateoGary:{title:"⚙ Mateo & Gary's Engine Depot",tag:"Engines and aero. Around-the-world power. Loud and chaotic.",
-    color:"#047857",tracks:["engine","aero"],
-    say:"Mateo: MORE POWER. Gary: more *controlled* power. Both: buy something."},
+  mateoGary:{title:"⚙ Mateo & Gary's Engine Depot",tag:"Rubber props, motors, jets, rockets. Loud and chaotic.",
+    color:"#047857",tracks:["engine","aero"],lines:[
+    "Mateo: MORE POWER. Gary: more *controlled* power. Both: buy something.",
+    "Mateo: WE CIRCLED THE PLANET! Gary: *you* sat in the shop. Mateo: emotionally I was airborne.",
+    "Gary: engines don't breathe in space. Mateo: so we built ones that HOLD THEIR BREATH.",
+    "Mateo: MOON! Gary: we saw, Mateo. Mateo: MOOOOON!",
+    "Both, quietly: ...we built that. Yeah. We built that.",
+  ]},
   sophie:{title:"🪽 Sophie's Glamorous Wing Shop",tag:"Wings, lift, glide, and graceful nonsense. Your road UP.",
-    color:"#be185d",tracks:["lift"],
-    say:"Sophie: darling, altitude is just fashion in the vertical direction."},
-  nico:{title:"🛠 Nico's Airframe Garage",tag:"Hull, structure, durability. How high can the frame survive?",
-    color:"#92400e",tracks:["hull"],
-    say:"Nico: the sky doesn't break planes. Weak frames break planes."},
+    color:"#be185d",tracks:["lift"],lines:[
+    "Sophie: darling, altitude is just fashion in the vertical direction.",
+    "Sophie: a world tour! Every biome saw my wings. As it should be.",
+    "Sophie: orbit, darling! The stars are simply DYING to meet you.",
+    "Sophie: moonlight is the most flattering light. I would know.",
+    "Sophie: Pluto. Understated. Distant. Fabulous. Very us.",
+  ]},
+  nico:{title:"🛠 Nico's Airframe Garage",tag:"Bodies, structure, durability, aircraft evolution.",
+    color:"#92400e",tracks:["hull"],lines:[
+    "Nico: the sky doesn't break planes. Weak frames break planes.",
+    "Nico: frame held for a full lap. Good. Now we build for altitude.",
+    "Nico: vacuum-rated. I said it would hold. I don't say things twice.",
+    "Nico: moon dust in the seams. ...I'll allow it.",
+    "Nico: thirty million feet and not one crack. That's craftsmanship.",
+  ]},
   mikey:{title:"🔧 Mikey's Workshop",tag:"Fuel systems and rocket boost. Launch harder, burn longer.",
-    color:"#1d4ed8",tracks:["fuel","boost"],
-    say:"Mikey: I strapped a bigger tank on it. What could go wrong?"},
+    color:"#1d4ed8",tracks:["fuel","boost"],lines:[
+    "Mikey: I strapped a bigger tank on it. What could go wrong?",
+    "Mikey: you went AROUND THE WORLD on my fuel lines?! Okay. Okay. Bigger tanks.",
+    "Mikey: my fuel math works in SPACE. Nico owes me five bucks.",
+    "Mikey: the MOON! Know how many rubber bands that would've taken in the old days?",
+    "Mikey: Pluto, kid. I'm not crying, there's carburetor fluid in my eye.",
+  ]},
+  jorge:{title:"🗼 Jorge's Control Tower — Passport Office",tag:"Flight logging, stamps, and airspace clearance.",
+    color:"#101820",tracks:[],lines:[
+    "Jorge: passport services, ground desk. No, I will not tell you what the blank pages are for.",
+    "Jorge: one lap, logged and stamped in gold. The upper airspace is yours now.",
+    "Jorge: Mission Control is online. Radar range — considerably farther than the drawing board.",
+    "Jorge: lunar flyby confirmed on radar. The tower went quiet for a minute there.",
+    "Jorge: radar's edge, pilot. There's nothing beyond that. ...Probably.",
+  ],custom:true},
 };
 const trackDesc={
   engine:"Cruise speed. Eats headwinds for breakfast.",
@@ -916,9 +1387,13 @@ function buy(track){
 }
 function renderShop(){
   const sh=SHOPS[state.shop];
-  let html=`<div class="shopTitle" style="background:${sh.color}">${sh.title}<small>${sh.tag}</small></div>
-  <div class="shopSay">${sh.say}</div>`;
+  const isJorge=state.shop==="jorge";
+  const title=(isJorge&&state.laps>=2)?"🗼 Jorge's Tower — MISSION CONTROL":sh.title;
+  const line=sh.lines[Math.min(progressTier(),sh.lines.length-1)];
+  let html=`<div class="shopTitle" style="background:${sh.color}">${title}<small>${sh.tag}</small></div>
+  <div class="shopSay">${line}</div>`;
   ui.shop.innerHTML=html;
+  if(sh.custom){renderJorge();return}
   for(const track of sh.tracks){
     const lvl=state.up[track],t=ECON.tracks[track],maxed=lvl>=t.max;
     const cost=maxed?0:upCost(track,lvl);
@@ -930,6 +1405,28 @@ function renderShop(){
       btn.onclick=()=>buy(track);
     }
     ui.shop.appendChild(btn);
+  }
+}
+/* Jorge's desk: passport office + (after orbital tech) Mission Control */
+function renderJorge(){
+  const d=document.createElement("div");
+  d.className="box";
+  const earned=state.stamps.length;
+  d.innerHTML=`<b>Passport Office:</b> ${earned} stamp${earned!==1?"s":""} logged.
+    Blank pages? <i>Classified.</i> Fly and find out.`;
+  ui.shop.appendChild(d);
+  if(state.laps>=2){
+    const mc=document.createElement("div");
+    mc.className="box";
+    const cap=gateCapFor(state.laps);
+    mc.innerHTML=`<b>Mission Control:</b> vertical clearance ${cap===Infinity?"UNLIMITED — deep space is open":"up to "+fmtAlt(cap)}.
+      Best recorded altitude: ${fmtAlt(state.bestAlt)}.`;
+    ui.shop.appendChild(mc);
+  } else {
+    const locked=document.createElement("div");
+    locked.className="box";
+    locked.innerHTML=`<b>Mission Control:</b> <i>dark and locked.</i> Jorge glances at it, then back at you. "Two laps, pilot. Then we talk about space."`;
+    ui.shop.appendChild(locked);
   }
 }
 
@@ -1054,6 +1551,7 @@ function visualUpdate(dt){
     const shift=16000;
     originOffset+=shift;
     for(const [,c] of chunks)c.group.children.forEach(m=>m.position.x-=shift);
+    for(const f of fireworks)f.pts.position.x-=shift;
     pad.position.x-=shift;
   }
   const px=gx-originOffset, py=Math.max(2,visY(p.alt)), pz=p.lat;
@@ -1066,14 +1564,25 @@ function visualUpdate(dt){
   // chase cam — pulls back with speed
   const back=26+Math.min(60,p.spd*.05);
   const target=new THREE.Vector3(px-back,py+9+Math.min(30,p.spd*.01),pz+back*.35);
-  camPos.lerp(target,Math.min(1,dt*3));
+  if(camPos.distanceTo(target)>3000)camPos.copy(target); // snap on load/teleport
+  else camPos.lerp(target,Math.min(1,dt*3));
   camera.position.copy(camPos);
   camera.lookAt(px+30,py+(flight.on?p.vy*.01:2),pz);
-  // sky & fog by altitude
+  // sky & fog by altitude, tinted by lap mood (mood fades out toward space)
   const [top,fogC]=skyFor(p.alt);
-  scene.background.copy(top);
-  scene.fog.color.copy(fogC);
+  const moodK=Math.max(0,1-p.alt/150000);
+  _tint.setRGB(1+(mood.tint.r-1)*moodK,1+(mood.tint.g-1)*moodK,1+(mood.tint.b-1)*moodK);
+  scene.background.copy(top).multiply(_tint);
+  if(flashT>0)scene.background.lerp(_white,.55);
+  scene.fog.color.copy(fogC).multiply(_tint);
   scene.fog.density=Math.max(.00002,.0012*Math.max(.05,1-p.alt/150000));
+  // prop animation: windmills spin, auroras breathe
+  const tNow=performance.now()*.001;
+  for(const [,c] of chunks){
+    for(const s of c.spin)s.rotation.z+=dt*s.userData.spinRate;
+    if(c.auroras&&nightOn())for(const a of c.auroras)a.material.opacity=.32+.2*Math.sin(tNow*.7+a.position.x*.01);
+  }
+  updateFireworks(dt);updateWeather(dt);
   updateChunks();updateClouds();updateCoins(dt);
 }
 
@@ -1103,6 +1612,7 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 setCraftForm(craftIndex(state.up));
+applyLapMood();
 renderStatic();
 requestAnimationFrame(t=>{lastT=t;loop(t)});
 </script>
